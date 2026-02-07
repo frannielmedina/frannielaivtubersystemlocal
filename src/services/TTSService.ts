@@ -1,9 +1,29 @@
 /**
- * TTSService - Servicio unificado de Text-to-Speech
+ * TTSService - Servicio unificado de Text-to-Speech (TypeScript)
  * Soporta: ElevenLabs, Coqui TTS (remoto/local), Browser Web Speech API
  */
 
-class TTSService {
+interface TTSConfig {
+  elevenlabs: { apiKey: string; voiceId: string };
+  coquiRemote: { apiUrl: string; voiceId: string };
+  coquiLocal: { serverUrl: string };
+}
+
+interface SavedConfig {
+  provider: string;
+  config: TTSConfig;
+}
+
+type TTSProvider = 'browser' | 'elevenlabs' | 'coqui-remote' | 'coqui-local';
+
+export class TTSService {
+  provider: TTSProvider;
+  config: TTSConfig;
+  queue: string[];
+  speaking: boolean;
+  enabled: boolean;
+  volume: number;
+
   constructor() {
     this.provider = 'browser';
     this.config = {
@@ -20,12 +40,12 @@ class TTSService {
     this.loadConfig();
   }
   
-  loadConfig() {
+  loadConfig(): void {
     try {
       const saved = localStorage.getItem('tts-config');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        this.provider = parsed.provider || 'browser';
+        const parsed: SavedConfig = JSON.parse(saved);
+        this.provider = parsed.provider as TTSProvider || 'browser';
         this.config = { ...this.config, ...parsed.config };
         console.log('🔊 TTS config loaded:', this.provider);
       }
@@ -34,9 +54,9 @@ class TTSService {
     }
   }
   
-  saveConfig() {
+  saveConfig(): void {
     try {
-      const toSave = {
+      const toSave: SavedConfig = {
         provider: this.provider,
         config: this.config
       };
@@ -47,18 +67,18 @@ class TTSService {
     }
   }
   
-  updateConfig(newConfig) {
-    this.provider = newConfig.provider || this.provider;
+  updateConfig(newConfig: Partial<SavedConfig>): void {
+    this.provider = (newConfig.provider as TTSProvider) || this.provider;
     this.config = { ...this.config, ...newConfig.config };
     this.saveConfig();
     console.log('🔄 TTS config updated:', this.provider);
   }
   
-  setVolume(volume) {
+  setVolume(volume: number): void {
     this.volume = Math.max(0, Math.min(1, volume));
   }
   
-  async speak(text, priority = false) {
+  async speak(text: string, priority: boolean = false): Promise<void> {
     if (!this.enabled || !text || text.trim() === '') return;
     
     // Limpiar texto de tags de animación
@@ -75,15 +95,13 @@ class TTSService {
     }
   }
   
-  _cleanText(text) {
+  private _cleanText(text: string): string {
     // Remover tags de animación [ANIMATION]
     let clean = text.replace(/\[.*?\]/g, '');
-    // Remover emojis si es necesario (opcional)
-    // clean = clean.replace(/[\u{1F600}-\u{1F64F}]/gu, '');
     return clean.trim();
   }
   
-  async _speak(text) {
+  private async _speak(text: string): Promise<void> {
     if (this.speaking) return;
     this.speaking = true;
     
@@ -114,7 +132,7 @@ class TTSService {
     }
   }
   
-  async _speakElevenLabs(text) {
+  private async _speakElevenLabs(text: string): Promise<void> {
     const { apiKey, voiceId } = this.config.elevenlabs || {};
     
     if (!apiKey || !voiceId) {
@@ -149,7 +167,7 @@ class TTSService {
     return this._playAudioBlob(audioBlob);
   }
   
-  async _speakCoquiRemote(text) {
+  private async _speakCoquiRemote(text: string): Promise<void> {
     const { apiUrl } = this.config.coquiRemote || {};
     
     if (!apiUrl) {
@@ -170,7 +188,7 @@ class TTSService {
     return this._playAudioBlob(audioBlob);
   }
   
-  async _speakCoquiLocal(text) {
+  private async _speakCoquiLocal(text: string): Promise<void> {
     const { serverUrl } = this.config.coquiLocal || {};
     const url = serverUrl || 'http://localhost:5002';
     
@@ -188,7 +206,7 @@ class TTSService {
     return this._playAudioBlob(audioBlob);
   }
   
-  _playAudioBlob(blob) {
+  private _playAudioBlob(blob: Blob): Promise<void> {
     return new Promise((resolve, reject) => {
       const audioUrl = URL.createObjectURL(blob);
       const audio = new Audio(audioUrl);
@@ -208,7 +226,7 @@ class TTSService {
     });
   }
   
-  async _speakBrowser(text) {
+  private async _speakBrowser(text: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!window.speechSynthesis) {
         reject(new Error('Browser no soporta Web Speech API'));
@@ -221,18 +239,20 @@ class TTSService {
       utterance.pitch = 1.0;
       utterance.volume = this.volume;
       
-      utterance.onend = resolve;
-      utterance.onerror = reject;
+      utterance.onend = () => resolve();
+      utterance.onerror = (event) => reject(event);
       
       speechSynthesis.speak(utterance);
     });
   }
   
-  async _processQueue() {
+  private async _processQueue(): Promise<void> {
     if (this.speaking || this.queue.length === 0) return;
     
     const text = this.queue.shift();
-    await this._speak(text);
+    if (text) {
+      await this._speak(text);
+    }
     
     // Procesar siguiente en cola con pequeña pausa
     if (this.queue.length > 0) {
@@ -240,7 +260,7 @@ class TTSService {
     }
   }
   
-  stop() {
+  stop(): void {
     // Detener Web Speech API
     if (window.speechSynthesis) {
       speechSynthesis.cancel();
@@ -251,7 +271,7 @@ class TTSService {
     this.speaking = false;
   }
   
-  toggle() {
+  toggle(): boolean {
     this.enabled = !this.enabled;
     if (!this.enabled) {
       this.stop();
@@ -260,29 +280,29 @@ class TTSService {
     return this.enabled;
   }
   
-  clearQueue() {
+  clearQueue(): void {
     this.queue = [];
   }
   
-  getQueueLength() {
+  getQueueLength(): number {
     return this.queue.length;
   }
   
-  isEnabled() {
+  isEnabled(): boolean {
     return this.enabled;
   }
   
-  isSpeaking() {
+  isSpeaking(): boolean {
     return this.speaking;
   }
   
-  getProvider() {
+  getProvider(): TTSProvider {
     return this.provider;
   }
   
   // Test de audio
-  async test() {
-    const testMessages = {
+  async test(): Promise<void> {
+    const testMessages: Record<TTSProvider, string> = {
       'browser': '¡Hola! Soy el sistema de voz del navegador.',
       'elevenlabs': 'Probando ElevenLabs Text to Speech.',
       'coqui-remote': 'Probando Coqui TTS remoto.',
@@ -294,10 +314,5 @@ class TTSService {
   }
 }
 
-// Exportar instancia global
-if (typeof window !== 'undefined') {
-  window.TTSService = TTSService;
-  window.ttsService = new TTSService();
-}
-
+// Export default también para compatibilidad
 export default TTSService;
