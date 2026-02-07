@@ -1,198 +1,76 @@
-/**
- * TTSService - Servicio unificado de Text-to-Speech (TypeScript)
- * Soporta: ElevenLabs, Coqui TTS (remoto/local), Browser Web Speech API
- * Compatible con SSR (Next.js)
- */
-
-interface TTSConfig {
-  elevenlabs: { apiKey: string; voiceId: string };
-  coquiRemote: { apiUrl: string; voiceId: string };
-  coquiLocal: { serverUrl: string };
-}
-
-interface SavedConfig {
-  provider: string;
-  config: TTSConfig;
-}
-
-interface InitialConfig {
-  provider?: string;
-  enabled?: boolean;
-  volume?: number;
-  elevenlabs?: { apiKey?: string; voiceId?: string };
-  coquiRemote?: { apiUrl?: string; voiceId?: string };
-  coquiLocal?: { serverUrl?: string };
-}
-
-type TTSProvider = 'browser' | 'elevenlabs' | 'coqui-remote' | 'coqui-local';
+import type { TTSConfig } from '@/types';
 
 export class TTSService {
-  provider: TTSProvider;
-  config: TTSConfig;
-  queue: string[];
-  speaking: boolean;
-  enabled: boolean;
-  volume: number;
+  private config: TTSConfig;
+  private queue: string[] = [];
+  private speaking: boolean = false;
   private isBrowser: boolean;
 
-  constructor(initialConfig?: InitialConfig) {
-    // Detectar si estamos en el navegador
+  constructor(config: TTSConfig) {
+    this.config = config;
     this.isBrowser = typeof window !== 'undefined';
-    
-    this.provider = 'browser';
-    this.config = {
-      elevenlabs: { apiKey: '', voiceId: '' },
-      coquiRemote: { apiUrl: '', voiceId: '' },
-      coquiLocal: { serverUrl: 'http://localhost:5002' }
-    };
-    this.queue = [];
-    this.speaking = false;
-    this.enabled = true;
-    this.volume = 1.0;
-    
-    // Aplicar configuración inicial si se proporciona
-    if (initialConfig) {
-      this.applyInitialConfig(initialConfig);
-    }
-    
-    // Cargar configuración guardada solo en el navegador
-    if (this.isBrowser) {
-      this.loadConfig();
-    }
   }
-  
-  private applyInitialConfig(initialConfig: InitialConfig): void {
-    if (initialConfig.provider) {
-      this.provider = initialConfig.provider as TTSProvider;
-    }
-    if (typeof initialConfig.enabled === 'boolean') {
-      this.enabled = initialConfig.enabled;
-    }
-    if (typeof initialConfig.volume === 'number') {
-      this.volume = initialConfig.volume;
-    }
-    if (initialConfig.elevenlabs) {
-      this.config.elevenlabs = {
-        apiKey: initialConfig.elevenlabs.apiKey || '',
-        voiceId: initialConfig.elevenlabs.voiceId || ''
-      };
-    }
-    if (initialConfig.coquiRemote) {
-      this.config.coquiRemote = {
-        apiUrl: initialConfig.coquiRemote.apiUrl || '',
-        voiceId: initialConfig.coquiRemote.voiceId || ''
-      };
-    }
-    if (initialConfig.coquiLocal) {
-      this.config.coquiLocal = {
-        serverUrl: initialConfig.coquiLocal.serverUrl || 'http://localhost:5002'
-      };
-    }
+
+  async speak(text: string): Promise<void> {
+    if (!this.isBrowser || !this.config.enabled || !text || text.trim() === '') return;
+
+    const cleanText = this.cleanText(text);
+    this.queue.push(cleanText);
+    this.processQueue();
   }
-  
-  loadConfig(): void {
-    if (!this.isBrowser) return;
-    
-    try {
-      const saved = localStorage.getItem('tts-config');
-      if (saved) {
-        const parsed: SavedConfig = JSON.parse(saved);
-        this.provider = parsed.provider as TTSProvider || 'browser';
-        this.config = { ...this.config, ...parsed.config };
-        console.log('🔊 TTS config loaded:', this.provider);
-      }
-    } catch (error) {
-      console.error('Error loading TTS config:', error);
-    }
+
+  private cleanText(text: string): string {
+    // Remove animation tags [ANIMATION]
+    return text.replace(/\[.*?\]/g, '').trim();
   }
-  
-  saveConfig(): void {
-    if (!this.isBrowser) return;
-    
-    try {
-      const toSave: SavedConfig = {
-        provider: this.provider,
-        config: this.config
-      };
-      localStorage.setItem('tts-config', JSON.stringify(toSave));
-      console.log('💾 TTS config saved');
-    } catch (error) {
-      console.error('Error saving TTS config:', error);
-    }
-  }
-  
-  updateConfig(newConfig: Partial<SavedConfig>): void {
-    this.provider = (newConfig.provider as TTSProvider) || this.provider;
-    this.config = { ...this.config, ...newConfig.config };
-    this.saveConfig();
-    console.log('🔄 TTS config updated:', this.provider);
-  }
-  
-  setVolume(volume: number): void {
-    this.volume = Math.max(0, Math.min(1, volume));
-  }
-  
-  async speak(text: string, priority: boolean = false): Promise<void> {
-    if (!this.isBrowser || !this.enabled || !text || text.trim() === '') return;
-    
-    // Limpiar texto de tags de animación
-    const cleanText = this._cleanText(text);
-    
-    if (priority) {
-      // Detener audio actual y hablar inmediatamente
-      this.stop();
-      await this._speak(cleanText);
-    } else {
-      // Añadir a cola
-      this.queue.push(cleanText);
-      this._processQueue();
-    }
-  }
-  
-  private _cleanText(text: string): string {
-    // Remover tags de animación [ANIMATION]
-    let clean = text.replace(/\[.*?\]/g, '');
-    return clean.trim();
-  }
-  
-  private async _speak(text: string): Promise<void> {
-    if (!this.isBrowser || this.speaking) return;
+
+  private async processQueue(): Promise<void> {
+    if (this.speaking || this.queue.length === 0) return;
+
+    const text = this.queue.shift();
+    if (!text) return;
+
     this.speaking = true;
-    
+
     try {
-      switch (this.provider) {
+      switch (this.config.provider) {
         case 'elevenlabs':
-          await this._speakElevenLabs(text);
-          break;
-        case 'coqui-remote':
-          await this._speakCoquiRemote(text);
+          await this.speakElevenLabs(text);
           break;
         case 'coqui-local':
-          await this._speakCoquiLocal(text);
+        case 'coqui-colab':
+          await this.speakCoqui(text);
           break;
         default:
-          await this._speakBrowser(text);
+          await this.speakWebSpeech(text);
       }
     } catch (error) {
       console.error('TTS Error:', error);
-      // Fallback a browser TTS
+      // Fallback to Web Speech
       try {
-        await this._speakBrowser(text);
+        await this.speakWebSpeech(text);
       } catch (fallbackError) {
         console.error('Fallback TTS also failed:', fallbackError);
       }
     } finally {
       this.speaking = false;
+      // Process next in queue
+      if (this.queue.length > 0) {
+        setTimeout(() => this.processQueue(), 300);
+      }
     }
   }
-  
-  private async _speakElevenLabs(text: string): Promise<void> {
-    const { apiKey, voiceId } = this.config.elevenlabs || {};
-    
+
+  private async speakElevenLabs(text: string): Promise<void> {
+    const apiKey = this.config.elevenLabsApiKey;
+    const voiceId = this.config.elevenLabsVoiceId;
+
     if (!apiKey || !voiceId) {
-      throw new Error('ElevenLabs no configurado correctamente');
+      throw new Error('ElevenLabs API key and Voice ID required');
     }
-    
+
+    const model = this.config.elevenLabsModel || 'eleven_monolingual_v1';
+
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
@@ -204,175 +82,119 @@ export class TTSService {
         },
         body: JSON.stringify({
           text: text,
-          model_id: 'eleven_monolingual_v1',
+          model_id: model,
           voice_settings: {
             stability: 0.5,
-            similarity_boost: 0.5
+            similarity_boost: 0.75,
+            style: 0.0,
+            use_speaker_boost: true
           }
         })
       }
     );
-    
+
     if (!response.ok) {
-      throw new Error(`ElevenLabs API error: ${response.status}`);
+      const error = await response.text();
+      throw new Error(`ElevenLabs API error: ${response.status} - ${error}`);
     }
-    
+
     const audioBlob = await response.blob();
-    return this._playAudioBlob(audioBlob);
+    return this.playAudioBlob(audioBlob);
   }
-  
-  private async _speakCoquiRemote(text: string): Promise<void> {
-    const { apiUrl } = this.config.coquiRemote || {};
-    
-    if (!apiUrl) {
-      throw new Error('Coqui Remote no configurado correctamente');
+
+  private async speakCoqui(text: string): Promise<void> {
+    const url = this.config.colabUrl || 'http://localhost:5000';
+    const useClone = this.config.useClone;
+    const voicePath = this.config.cloneVoicePath;
+
+    const body: any = { 
+      text,
+      speed: this.config.speed || 1.0
+    };
+
+    if (useClone && voicePath) {
+      body.voice = voicePath;
     }
-    
-    const response = await fetch(`${apiUrl}/api/tts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Coqui Remote API error: ${response.status}`);
+
+    if (this.config.multilingualDetection) {
+      body.detect_language = true;
     }
-    
-    const audioBlob = await response.blob();
-    return this._playAudioBlob(audioBlob);
-  }
-  
-  private async _speakCoquiLocal(text: string): Promise<void> {
-    const { serverUrl } = this.config.coquiLocal || {};
-    const url = serverUrl || 'http://localhost:5002';
-    
+
     const response = await fetch(`${url}/api/tts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text })
+      body: JSON.stringify(body)
     });
-    
+
     if (!response.ok) {
-      throw new Error(`Coqui Local API error: ${response.status}`);
+      const error = await response.text();
+      throw new Error(`Coqui TTS error: ${response.status} - ${error}`);
     }
-    
+
     const audioBlob = await response.blob();
-    return this._playAudioBlob(audioBlob);
+    return this.playAudioBlob(audioBlob);
   }
-  
-  private _playAudioBlob(blob: Blob): Promise<void> {
+
+  private playAudioBlob(blob: Blob): Promise<void> {
     return new Promise((resolve, reject) => {
       const audioUrl = URL.createObjectURL(blob);
       const audio = new Audio(audioUrl);
-      audio.volume = this.volume;
-      
+      audio.volume = 1.0;
+
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         resolve();
       };
-      
+
       audio.onerror = (error) => {
         URL.revokeObjectURL(audioUrl);
         reject(error);
       };
-      
+
       audio.play().catch(reject);
     });
   }
-  
-  private async _speakBrowser(text: string): Promise<void> {
+
+  private async speakWebSpeech(text: string): Promise<void> {
     if (!this.isBrowser) return Promise.resolve();
-    
+
     return new Promise((resolve, reject) => {
       if (!window.speechSynthesis) {
-        reject(new Error('Browser no soporta Web Speech API'));
+        reject(new Error('Browser does not support Web Speech API'));
         return;
       }
-      
+
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'es-ES'; // Español
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      utterance.volume = this.volume;
-      
+      utterance.lang = 'es-ES';
+      utterance.rate = this.config.speed || 1.0;
+      utterance.pitch = this.config.pitch || 1.0;
+      utterance.volume = 1.0;
+
       utterance.onend = () => resolve();
       utterance.onerror = (event) => reject(event);
-      
+
       speechSynthesis.speak(utterance);
     });
   }
-  
-  private async _processQueue(): Promise<void> {
-    if (this.speaking || this.queue.length === 0) return;
-    
-    const text = this.queue.shift();
-    if (text) {
-      await this._speak(text);
-    }
-    
-    // Procesar siguiente en cola con pequeña pausa
-    if (this.queue.length > 0) {
-      setTimeout(() => this._processQueue(), 300);
-    }
-  }
-  
+
   stop(): void {
     if (!this.isBrowser) return;
-    
-    // Detener Web Speech API
+
+    // Stop Web Speech API
     if (window.speechSynthesis) {
       speechSynthesis.cancel();
     }
-    
-    // Limpiar cola
+
+    // Clear queue
     this.queue = [];
     this.speaking = false;
   }
-  
-  toggle(): boolean {
-    this.enabled = !this.enabled;
-    if (!this.enabled) {
-      this.stop();
-    }
-    console.log('🔊 TTS', this.enabled ? 'habilitado' : 'deshabilitado');
-    return this.enabled;
+
+  updateConfig(config: TTSConfig): void {
+    this.config = config;
   }
-  
+
   clearQueue(): void {
     this.queue = [];
   }
-  
-  getQueueLength(): number {
-    return this.queue.length;
-  }
-  
-  isEnabled(): boolean {
-    return this.enabled;
-  }
-  
-  isSpeaking(): boolean {
-    return this.speaking;
-  }
-  
-  getProvider(): TTSProvider {
-    return this.provider;
-  }
-  
-  // Test de audio
-  async test(): Promise<void> {
-    if (!this.isBrowser) return;
-    
-    const testMessages: Record<TTSProvider, string> = {
-      'browser': '¡Hola! Soy el sistema de voz del navegador.',
-      'elevenlabs': 'Probando ElevenLabs Text to Speech.',
-      'coqui-remote': 'Probando Coqui TTS remoto.',
-      'coqui-local': 'Probando Coqui TTS local.'
-    };
-    
-    const message = testMessages[this.provider] || testMessages['browser'];
-    await this.speak(message, true);
-  }
 }
-
-// Export default también para compatibilidad
-export default TTSService;
