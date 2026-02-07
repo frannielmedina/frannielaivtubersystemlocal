@@ -1,18 +1,13 @@
-/** @type {import('tailwindcss').Config} */
-export default {
-  content: [
-    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
-  ],
-  theme: {
-    extend: {
-      colors: {
-        background: '#000000',
-        foreground: '#ffffff',
-        border: '#27272a',
-      },
-    },
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  webpack: (config) => {
+    config.externals.push({
+      'utf-8-validate': 'commonjs utf-8-validate',
+      'bufferutil': 'commonjs bufferutil',
+    });
+    return config;
   },
-  plugins: [],
+  transpilePackages: ['three', '@pixiv/three-vrm'],
 };
+
+module.exports = nextConfig;
