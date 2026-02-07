@@ -74,14 +74,21 @@ export interface AIMessage {
 }
 
 // TTS Types
+export type TTSProvider = 'webspeech' | 'elevenlabs' | 'coqui-local' | 'coqui-colab';
+
 export interface TTSConfig {
   enabled: boolean;
+  provider: TTSProvider;
   voice: string;
   speed: number;
   pitch: number;
   useClone: boolean;
   cloneVoicePath?: string;
   multilingualDetection: boolean;
+  elevenLabsApiKey?: string;
+  elevenLabsVoiceId?: string;
+  elevenLabsModel?: string;
+  colabUrl?: string;
 }
 
 // STT Types
