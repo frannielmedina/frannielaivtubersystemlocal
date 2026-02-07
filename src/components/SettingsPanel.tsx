@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { X, Save, Upload, Download, FileUp } from 'lucide-react';
 
@@ -45,12 +45,30 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const configInputRef = useRef<HTMLInputElement>(null);
 
+  // Update localConfig when config changes
+  useEffect(() => {
+    setLocalConfig(config);
+  }, [config]);
+
   if (!isOpen) return null;
 
   const handleSave = () => {
+    console.log('💾 Guardando configuración:', localConfig);
+    
+    // Update global config
     setConfig(localConfig);
+    
+    // Save to localStorage
     localStorage.setItem('vtuber-config', JSON.stringify(localConfig));
+    console.log('✅ Configuración guardada en localStorage');
+    
+    // Close panel
     onClose();
+    
+    // Force reload to apply changes
+    setTimeout(() => {
+      window.location.reload();
+    }, 100);
   };
 
   const handleGameChange = (game: 'chess' | 'checkers' | 'reversi') => {
@@ -309,23 +327,29 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
               <div>
                 <label className="block text-sm text-gray-300 mb-1">API Key</label>
                 <input
-                  type="password"
+                  type="text"
                   value={localConfig.ai.apiKey}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    console.log('🔑 API Key actualizada:', e.target.value.substring(0, 10) + '...');
                     setLocalConfig({
                       ...localConfig,
                       ai: { ...localConfig.ai, apiKey: e.target.value },
-                    })
-                  }
+                    });
+                  }}
                   placeholder="Enter your API key"
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 font-mono text-sm"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  {localConfig.ai.provider === 'groq' && 'Get free API key at: console.groq.com'}
+                  {localConfig.ai.provider === 'groq' && 'Get free API key at: console.groq.com/keys'}
                   {localConfig.ai.provider === 'openrouter' && 'Get API key at: openrouter.ai'}
                   {localConfig.ai.provider === 'mistral' && 'Get API key at: console.mistral.ai'}
                   {localConfig.ai.provider === 'perplexity' && 'Get API key at: perplexity.ai'}
                 </p>
+                {localConfig.ai.apiKey && (
+                  <p className="text-xs text-green-400 mt-1">
+                    ✅ API Key: {localConfig.ai.apiKey.substring(0, 10)}... ({localConfig.ai.apiKey.length} chars)
+                  </p>
+                )}
               </div>
 
               <div>
@@ -365,20 +389,23 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 <span className="text-white">Enable TTS</span>
               </label>
 
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localConfig.tts.useClone}
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">TTS Provider</label>
+                <select
+                  value={localConfig.tts.provider}
                   onChange={(e) =>
                     setLocalConfig({
                       ...localConfig,
-                      tts: { ...localConfig.tts, useClone: e.target.checked },
+                      tts: { ...localConfig.tts, provider: e.target.value as any },
                     })
                   }
-                  className="w-5 h-5"
-                />
-                <span className="text-white">Use Voice Clone (requires backend)</span>
-              </label>
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
+                >
+                  <option value="webspeech">Web Speech API (Built-in)</option>
+                  <option value="coqui-local">Coqui TTS (Local Backend)</option>
+                  <option value="elevenlabs">ElevenLabs (Premium)</option>
+                </select>
+              </div>
 
               <label className="flex items-center gap-2">
                 <input
@@ -394,37 +421,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 />
                 <span className="text-white">Multilingual Detection</span>
               </label>
-
-              {localConfig.tts.useClone && (
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">Voice Clone Reference Audio</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={localConfig.tts.cloneVoicePath || ''}
-                      readOnly
-                      placeholder="No voice file loaded"
-                      className="flex-1 px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 text-sm"
-                    />
-                    <button
-                      onClick={() => voiceInputRef.current?.click()}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors"
-                    >
-                      <FileUp size={16} /> Upload Voice
-                    </button>
-                    <input
-                      ref={voiceInputRef}
-                      type="file"
-                      accept=".wav,.mp3"
-                      onChange={handleVoiceUpload}
-                      className="hidden"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Upload 10-30 seconds of clear audio (WAV or MP3)
-                  </p>
-                </div>
-              )}
 
               <div>
                 <label className="block text-sm text-gray-300 mb-1">
@@ -544,9 +540,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   placeholder="your_bot_username"
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Twitch username for the bot (lowercase)
-                </p>
               </div>
 
               <div>
@@ -563,9 +556,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   placeholder="channel_name"
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Channel to join (without #, lowercase)
-                </p>
               </div>
 
               <div>
@@ -584,17 +574,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Get token at: <a href="https://twitchapps.com/tmi/" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300">twitchapps.com/tmi</a>
-                </p>
-              </div>
-
-              <div className="bg-blue-900 bg-opacity-30 border border-blue-700 rounded p-3">
-                <p className="text-sm text-blue-300">
-                  <strong>📝 Twitch Setup:</strong><br/>
-                  1. Get OAuth token from twitchapps.com/tmi<br/>
-                  2. Enter your bot's username (can be your main account)<br/>
-                  3. Enter the channel name to join<br/>
-                  4. Save settings and refresh the page<br/>
-                  5. Check browser console for connection status
                 </p>
               </div>
             </div>
@@ -624,9 +603,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 className="hidden"
               />
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Save your complete settings to a file, or load a previously saved configuration
-            </p>
           </section>
         </div>
 
@@ -642,7 +618,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
             onClick={handleSave}
             className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded flex items-center gap-2 transition-colors"
           >
-            <Save size={20} /> Save Settings
+            <Save size={20} /> Save & Reload
           </button>
         </div>
       </div>
