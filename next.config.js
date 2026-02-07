@@ -10,4 +10,4 @@ const nextConfig = {
   transpilePackages: ['three', '@pixiv/three-vrm'],
 };
 
-export default nextConfig;
+module.exports = nextConfig;
