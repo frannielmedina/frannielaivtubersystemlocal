@@ -70,7 +70,8 @@ export class GameMessenger {
       // Hablar con TTS (sin tags de animación)
       if (speakInTTS && this.tts) {
         const cleanMessage = message.replace(/\[.*?\]/g, '').trim();
-        this.tts.speak(cleanMessage, priority);
+        // TTSService.speak() solo acepta 1 argumento
+        this.tts.speak(cleanMessage);
       }
       
       // Ejecutar animación en VRM
