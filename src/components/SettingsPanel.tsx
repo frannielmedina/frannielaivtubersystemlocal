@@ -9,7 +9,7 @@ interface SettingsPanelProps {
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose }) => {
-  const { config, setConfig, setGameState } = useStore();
+  const { config, gameState, setConfig, setGameState } = useStore();
   const [localConfig, setLocalConfig] = useState(config);
 
   if (!isOpen) return null;
@@ -47,7 +47,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
               <button
                 onClick={() => handleGameChange('chess')}
                 className={`p-4 rounded border-2 transition-all ${
-                  config.gameState?.currentGame === 'chess'
+                  gameState.currentGame === 'chess'
                     ? 'border-purple-500 bg-purple-900'
                     : 'border-gray-700 hover:border-gray-600'
                 }`}
@@ -58,7 +58,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
               <button
                 onClick={() => handleGameChange('checkers')}
                 className={`p-4 rounded border-2 transition-all ${
-                  config.gameState?.currentGame === 'checkers'
+                  gameState.currentGame === 'checkers'
                     ? 'border-purple-500 bg-purple-900'
                     : 'border-gray-700 hover:border-gray-600'
                 }`}
@@ -69,7 +69,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
               <button
                 onClick={() => handleGameChange('reversi')}
                 className={`p-4 rounded border-2 transition-all ${
-                  config.gameState?.currentGame === 'reversi'
+                  gameState.currentGame === 'reversi'
                     ? 'border-purple-500 bg-purple-900'
                     : 'border-gray-700 hover:border-gray-600'
                 }`}
