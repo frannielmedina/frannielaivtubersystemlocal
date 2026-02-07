@@ -1,20 +1,34 @@
 /**
- * ChessGame - Integración de Ajedrez con comandos y TTS
+ * ChessGame - Integración de Ajedrez con comandos y TTS (TypeScript)
  */
 
 import React, { useState, useEffect } from 'react';
-import { Chess } from 'chess.js'; // Asume que usas chess.js
-import GameMessenger from './GameMessenger';
+import { Chess, Move } from 'chess.js';
+import GameMessenger from '../services/GameMessenger';
+import TTSService from '../services/TTSService';
 
-const ChessGame = ({ ttsService, chatService, vrmController }) => {
+interface ChessGameProps {
+  ttsService?: TTSService;
+  chatService?: any;
+  vrmController?: any;
+}
+
+interface ChatMessage {
+  text: string;
+  user?: string;
+}
+
+const ChessGame: React.FC<ChessGameProps> = ({ ttsService, chatService, vrmController }) => {
   const [game, setGame] = useState(new Chess());
-  const [gameMessenger] = useState(new GameMessenger(ttsService, chatService));
+  const [gameMessenger] = useState(() => new GameMessenger(ttsService, chatService));
   const [showHelp, setShowHelp] = useState(true);
-  const [moveHistory, setMoveHistory] = useState([]);
+  const [moveHistory, setMoveHistory] = useState<Move[]>([]);
 
   useEffect(() => {
     // Configurar VRM controller
-    gameMessenger.setVRMController(vrmController);
+    if (vrmController) {
+      gameMessenger.setVRMController(vrmController);
+    }
 
     // Mensaje de bienvenida
     gameMessenger.sendGameWelcome(
@@ -24,8 +38,10 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
     );
 
     // Escuchar comandos del chat
-    const handleChatMessage = (message) => {
-      handleChessCommand(message);
+    const handleChatMessage = (message: ChatMessage) => {
+      if (message.text) {
+        handleChessCommand(message.text);
+      }
     };
 
     chatService?.on('message', handleChatMessage);
@@ -33,12 +49,12 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
     return () => {
       chatService?.off('message', handleChatMessage);
     };
-  }, []);
+  }, [chatService, gameMessenger, vrmController]);
 
   /**
    * Manejar comandos de chat
    */
-  const handleChessCommand = (message) => {
+  const handleChessCommand = (message: string): void => {
     const text = message.toLowerCase().trim();
 
     // Comando !move
@@ -85,7 +101,7 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
   /**
    * Realizar movimiento
    */
-  const makeMove = (from, to) => {
+  const makeMove = (from: string, to: string): void => {
     try {
       const move = game.move({
         from: from,
@@ -110,7 +126,7 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
           details = `${getPieceName(move.piece)} de ${from.toUpperCase()} a ${to.toUpperCase()}`;
         }
 
-        gameMessenger.sendMoveSuccess(`Movimiento exitoso`, details, animation);
+        gameMessenger.sendMoveSuccess('Movimiento exitoso', details, animation);
 
         // Verificar estado del juego
         checkGameState();
@@ -127,7 +143,7 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
   /**
    * Verificar estado del juego
    */
-  const checkGameState = () => {
+  const checkGameState = (): void => {
     if (game.isCheckmate()) {
       const winner = game.turn() === 'w' ? 'Negras' : 'Blancas';
       gameMessenger.sendCheckmate(winner);
@@ -152,7 +168,7 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
   /**
    * Resetear juego
    */
-  const resetGame = () => {
+  const resetGame = (): void => {
     setGame(new Chess());
     setMoveHistory([]);
     gameMessenger.sendGameMessage('Juego reiniciado. ¡Buena suerte!', {
@@ -163,7 +179,7 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
   /**
    * Deshacer movimiento
    */
-  const undoMove = () => {
+  const undoMove = (): void => {
     const move = game.undo();
     if (move) {
       setGame(new Chess(game.fen()));
@@ -181,7 +197,7 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
   /**
    * Mostrar pista
    */
-  const showHint = () => {
+  const showHint = (): void => {
     const moves = game.moves({ verbose: true });
     if (moves.length === 0) return;
 
@@ -197,7 +213,7 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
   /**
    * Mostrar movimientos posibles
    */
-  const showPossibleMoves = () => {
+  const showPossibleMoves = (): void => {
     const moves = game.moves({ verbose: true });
     const count = moves.length;
     
@@ -210,7 +226,7 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
   /**
    * Mostrar comandos
    */
-  const showCommands = () => {
+  const showCommands = (): void => {
     const commands = [
       '!move [origen] to [destino] - Mover pieza',
       '!hint - Obtener pista',
@@ -225,8 +241,8 @@ const ChessGame = ({ ttsService, chatService, vrmController }) => {
   /**
    * Obtener nombre de pieza en español
    */
-  const getPieceName = (piece) => {
-    const pieces = {
+  const getPieceName = (piece: string): string => {
+    const pieces: Record<string, string> = {
       'p': 'Peón',
       'n': 'Caballo',
       'b': 'Alfil',
