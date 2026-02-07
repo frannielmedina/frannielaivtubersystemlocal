@@ -402,10 +402,146 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 >
                   <option value="webspeech">Web Speech API (Built-in)</option>
-                  <option value="coqui-local">Coqui TTS (Local Backend)</option>
+                  <option value="coqui-local">Coqui TTS (Local/Ngrok)</option>
+                  <option value="coqui-colab">Coqui TTS (Google Colab)</option>
                   <option value="elevenlabs">ElevenLabs (Premium)</option>
                 </select>
               </div>
+
+              {/* ElevenLabs Config */}
+              {localConfig.tts.provider === 'elevenlabs' && (
+                <div className="bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
+                  <h4 className="text-white font-semibold">ElevenLabs Configuration</h4>
+                  
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">API Key</label>
+                    <input
+                      type="password"
+                      value={localConfig.tts.elevenLabsApiKey || ''}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, elevenLabsApiKey: e.target.value },
+                        })
+                      }
+                      placeholder="sk_..."
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Get your API key at: <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300">elevenlabs.io</a>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Voice ID</label>
+                    <input
+                      type="text"
+                      value={localConfig.tts.elevenLabsVoiceId || ''}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, elevenLabsVoiceId: e.target.value },
+                        })
+                      }
+                      placeholder="21m00Tcm4TlvDq8ikWAM"
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Find voice IDs in your ElevenLabs dashboard
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Model</label>
+                    <select
+                      value={localConfig.tts.elevenLabsModel || 'eleven_monolingual_v1'}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, elevenLabsModel: e.target.value },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                    >
+                      <option value="eleven_monolingual_v1">Eleven Monolingual v1</option>
+                      <option value="eleven_multilingual_v2">Eleven Multilingual v2</option>
+                      <option value="eleven_turbo_v2">Eleven Turbo v2 (Fastest)</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Coqui Local/Colab Config */}
+              {(localConfig.tts.provider === 'coqui-local' || localConfig.tts.provider === 'coqui-colab') && (
+                <div className="bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
+                  <h4 className="text-white font-semibold">
+                    {localConfig.tts.provider === 'coqui-local' ? 'Coqui TTS Local/Ngrok' : 'Coqui TTS Google Colab'}
+                  </h4>
+                  
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      {localConfig.tts.provider === 'coqui-local' ? 'Server URL (Local or Ngrok)' : 'Colab Ngrok URL'}
+                    </label>
+                    <input
+                      type="text"
+                      value={localConfig.tts.colabUrl || ''}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, colabUrl: e.target.value },
+                        })
+                      }
+                      placeholder={localConfig.tts.provider === 'coqui-local' 
+                        ? 'http://localhost:5000 or https://xxxx.ngrok.io'
+                        : 'https://xxxx-xx-xx-xxx-xx.ngrok-free.app'
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      {localConfig.tts.provider === 'coqui-local' 
+                        ? 'Use http://localhost:5000 for local or your ngrok URL'
+                        : 'Paste your ngrok URL from Google Colab here'
+                      }
+                    </p>
+                  </div>
+
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={localConfig.tts.useClone}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, useClone: e.target.checked },
+                        })
+                      }
+                      className="w-5 h-5"
+                    />
+                    <span className="text-white">Use Voice Clone</span>
+                  </label>
+
+                  {localConfig.tts.useClone && (
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Voice Clone File Path</label>
+                      <input
+                        type="text"
+                        value={localConfig.tts.cloneVoicePath || ''}
+                        onChange={(e) =>
+                          setLocalConfig({
+                            ...localConfig,
+                            tts: { ...localConfig.tts, cloneVoicePath: e.target.value },
+                          })
+                        }
+                        placeholder="/path/to/voice.wav"
+                        className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Path to your reference voice WAV file (10-30 seconds, clear audio)
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <label className="flex items-center gap-2">
                 <input
@@ -527,22 +663,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
               </label>
 
               <div>
-                <label className="block text-sm text-gray-300 mb-1">Bot Username</label>
-                <input
-                  type="text"
-                  value={localConfig.twitch.username}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      twitch: { ...localConfig.twitch, username: e.target.value.toLowerCase() },
-                    })
-                  }
-                  placeholder="your_bot_username"
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                />
-              </div>
-
-              <div>
                 <label className="block text-sm text-gray-300 mb-1">Channel to Join</label>
                 <input
                   type="text"
@@ -558,8 +678,58 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 />
               </div>
 
+              <div className="bg-blue-900 bg-opacity-30 p-3 rounded border border-blue-700">
+                <p className="text-sm text-blue-200 mb-2">
+                  <strong>⚠️ OAuth Token Generator Discontinued</strong>
+                </p>
+                <p className="text-xs text-gray-300 mb-2">
+                  The old Twitchapps token generator no longer works. Use one of these options:
+                </p>
+                
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <strong className="text-white">Option 1 - Read Only (Easiest):</strong>
+                    <p className="text-gray-300">Leave token blank to connect in read-only mode (can read chat but not send messages)</p>
+                  </div>
+                  
+                  <div>
+                    <strong className="text-white">Option 2 - Twitch CLI:</strong>
+                    <p className="text-gray-300">Install Twitch CLI and run: <code className="bg-gray-800 px-1">twitch token</code></p>
+                    <a href="https://github.com/twitchdev/twitch-cli" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300">
+                      Download Twitch CLI →
+                    </a>
+                  </div>
+                  
+                  <div>
+                    <strong className="text-white">Option 3 - Alternative Generator:</strong>
+                    <a href="https://twitchtokengenerator.com/" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300">
+                      twitchtokengenerator.com →
+                    </a>
+                    <p className="text-gray-300 mt-1">Select &quot;Bot Chat Token&quot; and authorize</p>
+                  </div>
+                </div>
+              </div>
+
               <div>
-                <label className="block text-sm text-gray-300 mb-1">OAuth Token</label>
+                <label className="block text-sm text-gray-300 mb-1">Bot Username (Optional)</label>
+                <input
+                  type="text"
+                  value={localConfig.twitch.username}
+                  onChange={(e) =>
+                    setLocalConfig({
+                      ...localConfig,
+                      twitch: { ...localConfig.twitch, username: e.target.value.toLowerCase() },
+                    })
+                  }
+                  placeholder="your_bot_username (optional for read-only)"
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">
+                  OAuth Token (Optional - leave blank for read-only mode)
+                </label>
                 <input
                   type="password"
                   value={localConfig.twitch.token}
@@ -569,11 +739,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                       twitch: { ...localConfig.twitch, token: e.target.value },
                     })
                   }
-                  placeholder="oauth:..."
+                  placeholder="oauth:... (optional)"
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Get token at: <a href="https://twitchapps.com/tmi/" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300">twitchapps.com/tmi</a>
+                  Leave empty to connect in read-only mode (can receive messages but can&apos;t send)
                 </p>
               </div>
             </div>
