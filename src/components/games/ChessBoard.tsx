@@ -28,7 +28,7 @@ export const ChessBoard: React.FC = () => {
       let message = '';
       
       if (move.isCheckmate) {
-        const winner = game?.getWinner();
+        const winner = newGame.getWinner();
         if (winner === gameState.aiColor) {
           message = 'Checkmate! I won! 🎉 Great game!';
           setAnimation({ type: 'emote', name: 'celebrate', duration: 3000 });
