@@ -14,6 +14,15 @@ interface SavedConfig {
   config: TTSConfig;
 }
 
+interface InitialConfig {
+  provider?: string;
+  enabled?: boolean;
+  volume?: number;
+  elevenlabs?: { apiKey?: string; voiceId?: string };
+  coquiRemote?: { apiUrl?: string; voiceId?: string };
+  coquiLocal?: { serverUrl?: string };
+}
+
 type TTSProvider = 'browser' | 'elevenlabs' | 'coqui-remote' | 'coqui-local';
 
 export class TTSService {
@@ -24,7 +33,7 @@ export class TTSService {
   enabled: boolean;
   volume: number;
 
-  constructor() {
+  constructor(initialConfig?: InitialConfig) {
     this.provider = 'browser';
     this.config = {
       elevenlabs: { apiKey: '', voiceId: '' },
@@ -36,8 +45,42 @@ export class TTSService {
     this.enabled = true;
     this.volume = 1.0;
     
-    // Cargar configuración guardada
+    // Aplicar configuración inicial si se proporciona
+    if (initialConfig) {
+      this.applyInitialConfig(initialConfig);
+    }
+    
+    // Cargar configuración guardada (puede sobrescribir la inicial)
     this.loadConfig();
+  }
+  
+  private applyInitialConfig(initialConfig: InitialConfig): void {
+    if (initialConfig.provider) {
+      this.provider = initialConfig.provider as TTSProvider;
+    }
+    if (typeof initialConfig.enabled === 'boolean') {
+      this.enabled = initialConfig.enabled;
+    }
+    if (typeof initialConfig.volume === 'number') {
+      this.volume = initialConfig.volume;
+    }
+    if (initialConfig.elevenlabs) {
+      this.config.elevenlabs = {
+        apiKey: initialConfig.elevenlabs.apiKey || '',
+        voiceId: initialConfig.elevenlabs.voiceId || ''
+      };
+    }
+    if (initialConfig.coquiRemote) {
+      this.config.coquiRemote = {
+        apiUrl: initialConfig.coquiRemote.apiUrl || '',
+        voiceId: initialConfig.coquiRemote.voiceId || ''
+      };
+    }
+    if (initialConfig.coquiLocal) {
+      this.config.coquiLocal = {
+        serverUrl: initialConfig.coquiLocal.serverUrl || 'http://localhost:5002'
+      };
+    }
   }
   
   loadConfig(): void {
