@@ -9,72 +9,80 @@ export const ChessBoard: React.FC = () => {
   const [game, setGame] = useState<ChessGame | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [legalMoves, setLegalMoves] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const colorMessage = gameState.aiColor === 'white' 
-      ? 'I\'ll play as White ⚪' 
-      : 'I\'ll play as Black ⚫';
-      
-    addChatMessage({
-      id: Date.now().toString(),
-      username: 'Miko',
-      message: `New chess game! ${colorMessage} Let's play! ♟️`,
-      timestamp: Date.now(),
-      isAI: true,
-      color: '#9333ea'
-    });
+    const initGame = async () => {
+      const colorMessage = gameState.aiColor === 'white' 
+        ? 'I\'ll play as White ⚪' 
+        : 'I\'ll play as Black ⚫';
+        
+      addChatMessage({
+        id: Date.now().toString(),
+        username: 'Miko',
+        message: `New chess game! ${colorMessage} Let's play! ♟️`,
+        timestamp: Date.now(),
+        isAI: true,
+        color: '#9333ea'
+      });
 
-    const newGame = new ChessGame(gameState.aiColor, async (move) => {
-      let message = '';
-      
-      if (move.isCheckmate) {
-        const winner = newGame.getWinner();
-        if (winner === gameState.aiColor) {
-          message = 'Checkmate! I won! 🎉 Great game!';
-          setAnimation({ type: 'emote', name: 'celebrate', duration: 3000 });
-        } else {
-          message = 'Checkmate! You won! 😢 Well played!';
-          setAnimation({ type: 'emote', name: 'sad', duration: 2000 });
+      const newGame = new ChessGame(gameState.aiColor, async (move) => {
+        let message = '';
+        
+        if (move.isCheckmate) {
+          const winner = newGame.getWinner();
+          if (winner === gameState.aiColor) {
+            message = 'Checkmate! I won! 🎉 Great game!';
+            setAnimation({ type: 'emote', name: 'celebrate', duration: 3000 });
+          } else {
+            message = 'Checkmate! You won! 😢 Well played!';
+            setAnimation({ type: 'emote', name: 'sad', duration: 2000 });
+          }
+          setGameState({ winner: winner === 'white' ? 'player' : 'ai' });
+        } else if (move.isCheck) {
+          message = 'Check! Your king is in danger! 👀';
+          setAnimation({ type: 'emote', name: 'surprised', duration: 2000 });
+        } else if (move.captured) {
+          const pieceNames: Record<string, string> = {
+            'p': 'pawn',
+            'n': 'knight',
+            'b': 'bishop',
+            'r': 'rook',
+            'q': 'queen'
+          };
+          const pieceName = pieceNames[move.captured] || 'piece';
+          message = `I captured your ${pieceName}! 😈`;
+          setAnimation({ type: 'emote', name: 'celebrate', duration: 1500 });
         }
-        setGameState({ winner: winner === 'white' ? 'player' : 'ai' });
-      } else if (move.isCheck) {
-        message = 'Check! Your king is in danger! 👀';
-        setAnimation({ type: 'emote', name: 'surprised', duration: 2000 });
-      } else if (move.captured) {
-        const pieceNames: Record<string, string> = {
-          'p': 'pawn',
-          'n': 'knight',
-          'b': 'bishop',
-          'r': 'rook',
-          'q': 'queen'
-        };
-        const pieceName = pieceNames[move.captured] || 'piece';
-        message = `I captured your ${pieceName}! 😈`;
-        setAnimation({ type: 'emote', name: 'celebrate', duration: 1500 });
-      }
 
-      if (message) {
-        addChatMessage({ 
-          id: Date.now().toString(), 
-          username: 'Miko', 
-          message, 
-          timestamp: Date.now(), 
-          isAI: true, 
-          color: '#9333ea' 
-        });
+        if (message) {
+          addChatMessage({ 
+            id: Date.now().toString(), 
+            username: 'Miko', 
+            message, 
+            timestamp: Date.now(), 
+            isAI: true, 
+            color: '#9333ea' 
+          });
+        }
+      });
+      
+      // Wait for game to initialize
+      await newGame.waitForInit();
+      setGame(newGame);
+      setLoading(false);
+      
+      // If AI is white, make first move
+      if (gameState.aiColor === 'white') {
+        setTimeout(() => newGame.makeAIMove(), 1000);
       }
-    });
-    
-    setGame(newGame);
-    
-    // If AI is white, make first move
-    if (gameState.aiColor === 'white') {
-      setTimeout(() => newGame.makeAIMove(), 1000);
-    }
+    };
+
+    initGame();
   }, []);
 
   useEffect(() => {
-    if (!game || game.isGameOver()) return;
+    if (!game || loading || game.isGameOver()) return;
     
     const currentTurn = game.turn();
     const aiTurn = gameState.aiColor === 'white' ? 'w' : 'b';
@@ -82,10 +90,10 @@ export const ChessBoard: React.FC = () => {
     if (currentTurn === aiTurn) {
       setTimeout(() => game.makeAIMove(), 500);
     }
-  }, [game?.turn()]);
+  }, [game?.turn(), loading]);
 
   const handleSquareClick = (square: string) => {
-    if (!game || game.isGameOver()) return;
+    if (!game || loading || game.isGameOver()) return;
     
     // Check if it's player's turn
     const currentTurn = game.turn();
@@ -109,18 +117,6 @@ export const ChessBoard: React.FC = () => {
       if (move) {
         setSelectedSquare(null);
         setLegalMoves([]);
-        
-        // Check if player tried to make illegal move while in check
-        if (game.isCheck() && !move) {
-          addChatMessage({
-            id: Date.now().toString(),
-            username: 'Miko',
-            message: 'You can\'t do that! Your king is in check! 🚫',
-            timestamp: Date.now(),
-            isAI: true,
-            color: '#9333ea'
-          });
-        }
       } else {
         // Try selecting new square
         const moves = game.getLegalMoves(square);
@@ -141,8 +137,10 @@ export const ChessBoard: React.FC = () => {
     }
   };
 
-  const handleReset = () => {
-    game?.reset();
+  const handleReset = async () => {
+    if (!game) return;
+    
+    game.reset();
     setSelectedSquare(null);
     setLegalMoves([]);
     setGameState({ winner: null, moveHistory: [] });
@@ -162,11 +160,20 @@ export const ChessBoard: React.FC = () => {
     
     // If AI is white, make first move
     if (gameState.aiColor === 'white') {
-      setTimeout(() => game?.makeAIMove(), 1000);
+      setTimeout(() => game.makeAIMove(), 1000);
     }
   };
 
-  if (!game) return <div className="text-white">Loading chess game...</div>;
+  if (loading || !game) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-white text-center">
+          <div className="text-2xl mb-2">♟️</div>
+          <div>Loading chess game...</div>
+        </div>
+      </div>
+    );
+  }
 
   const board = game.getBoard();
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
@@ -206,7 +213,6 @@ export const ChessBoard: React.FC = () => {
               const isLight = (rowIdx + colIdx) % 2 === 0;
               const isSelected = square === selectedSquare;
               const isLegal = legalMoves.includes(square);
-              const isLastMove = false; // TODO: track last move
 
               return (
                 <div
@@ -216,7 +222,7 @@ export const ChessBoard: React.FC = () => {
                     isLight ? 'bg-amber-100' : 'bg-amber-700'
                   } ${isSelected ? 'ring-4 ring-inset ring-blue-500' : ''} ${
                     isLegal ? 'ring-2 ring-inset ring-green-400' : ''
-                  } ${isLastMove ? 'bg-yellow-300' : ''} hover:opacity-80`}
+                  } hover:opacity-80`}
                 >
                   {piece && (
                     <span className="drop-shadow-md select-none">
