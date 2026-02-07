@@ -4,8 +4,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Chess, Move } from 'chess.js';
-import GameMessenger from '../services/GameMessenger';
-import TTSService from '../services/TTSService';
+import { GameMessenger } from '../services/GameMessenger';
+import { TTSService } from '../services/TTSService';
 
 interface ChessGameProps {
   ttsService?: TTSService;
@@ -18,7 +18,7 @@ interface ChatMessage {
   user?: string;
 }
 
-const ChessGame: React.FC<ChessGameProps> = ({ ttsService, chatService, vrmController }) => {
+export const ChessGame: React.FC<ChessGameProps> = ({ ttsService, chatService, vrmController }) => {
   const [game, setGame] = useState(new Chess());
   const [gameMessenger] = useState(() => new GameMessenger(ttsService, chatService));
   const [showHelp, setShowHelp] = useState(true);
@@ -314,4 +314,5 @@ const ChessGame: React.FC<ChessGameProps> = ({ ttsService, chatService, vrmContr
   );
 };
 
+// Export default también para compatibilidad
 export default ChessGame;
