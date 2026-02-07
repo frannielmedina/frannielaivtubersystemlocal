@@ -1,15 +1,37 @@
 'use client';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/store/useStore';
 import { Send } from 'lucide-react';
 
-export const ChatPanel: React.FC = () => {
+interface ChatPanelProps {
+  onDirectMessage?: (message: string) => void;
+}
+
+export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
   const { chatMessages, config } = useStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [inputMessage, setInputMessage] = useState('');
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  const handleSend = () => {
+    if (!inputMessage.trim()) return;
+    
+    if (onDirectMessage) {
+      onDirectMessage(inputMessage);
+    }
+    
+    setInputMessage('');
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
 
   return (
     <div className="h-full bg-gray-900 flex flex-col">
@@ -24,14 +46,18 @@ export const ChatPanel: React.FC = () => {
         {chatMessages.length === 0 && (
           <div className="text-center text-gray-500 mt-8">
             <p>No messages yet</p>
-            <p className="text-sm mt-2">Twitch messages will appear here</p>
+            <p className="text-sm mt-2">
+              {config.twitch.enabled 
+                ? 'Twitch messages will appear here' 
+                : 'Send a direct message to test!'}
+            </p>
           </div>
         )}
 
         {chatMessages.map((msg: any) => (
           <div
             key={msg.id}
-            className={`p-3 rounded-lg ${
+            className={`p-3 rounded-lg animate-slide-in-left ${
               msg.isAI ? 'bg-purple-900 bg-opacity-50' : 'bg-gray-800'
             }`}
           >
@@ -56,19 +82,24 @@ export const ChatPanel: React.FC = () => {
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Messages come from Twitch..."
-            disabled
-            className="flex-1 px-4 py-2 bg-gray-700 text-gray-400 rounded border border-gray-600 outline-none"
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder={config.twitch.enabled ? "Direct message (for testing)..." : "Send message to your VTuber..."}
+            className="flex-1 px-4 py-2 bg-gray-700 text-white rounded border border-gray-600 outline-none focus:border-purple-500"
           />
           <button
-            disabled
-            className="px-4 py-2 bg-gray-700 text-gray-500 rounded cursor-not-allowed"
+            onClick={handleSend}
+            disabled={!inputMessage.trim()}
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded transition-colors"
           >
             <Send size={20} />
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          💡 Messages starting with ! or containing @ are ignored
+          {config.twitch.enabled 
+            ? '💡 Messages starting with ! or containing @ are ignored from Twitch'
+            : '💬 Direct messaging mode - useful for testing without Twitch'}
         </p>
       </div>
     </div>
