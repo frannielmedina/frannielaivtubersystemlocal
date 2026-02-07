@@ -44,11 +44,27 @@ export default function Home() {
     aiService.updateConfig(config.ai);
     ttsService.updateConfig(config.tts);
     
-    if (config.twitch.enabled && !twitchService.isConnected()) {
-      console.log('🔌 Conectando a Twitch...');
-      twitchService.connect(handleTwitchMessage).catch(err => {
-        console.error('❌ Error conectando a Twitch:', err);
-      });
+    // Only connect to Twitch if enabled AND channel is set
+    if (config.twitch.enabled && config.twitch.channel && config.twitch.channel.trim() !== '') {
+      if (!twitchService.isConnected()) {
+        console.log('🔌 Conectando a Twitch...');
+        twitchService.connect(handleTwitchMessage).catch(err => {
+          console.error('❌ Error conectando a Twitch:', err);
+          addChatMessage({
+            id: Date.now().toString(),
+            username: 'System',
+            message: `Failed to connect to Twitch: ${err.message}. Check your settings.`,
+            timestamp: Date.now(),
+            color: '#ef4444',
+          });
+        });
+      }
+    } else {
+      // Disconnect if Twitch is disabled or no channel set
+      if (twitchService.isConnected()) {
+        console.log('🔌 Desconectando de Twitch...');
+        twitchService.disconnect();
+      }
     }
 
     return () => {
@@ -56,7 +72,7 @@ export default function Home() {
         twitchService.disconnect();
       }
     };
-  }, [config]);
+  }, [config.ai, config.tts, config.twitch.enabled, config.twitch.channel, config.twitch.token]);
 
   const handleTwitchMessage = async (message: any) => {
     console.log('💬 Mensaje de Twitch recibido:', message);
@@ -241,6 +257,12 @@ export default function Home() {
             ) : (
               <p className="text-red-400 text-sm mt-1">❌ No API Key</p>
             )}
+            {config.twitch.enabled && config.twitch.channel ? (
+              <p className="text-blue-400 text-sm mt-1">
+                💬 Twitch: {config.twitch.channel}
+                {!config.twitch.token || config.twitch.token.trim() === '' ? ' (read-only)' : ''}
+              </p>
+            ) : null}
           </div>
         </div>
 
