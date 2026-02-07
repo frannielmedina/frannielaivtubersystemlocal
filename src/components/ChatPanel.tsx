@@ -2,7 +2,6 @@
 import React, { useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { Send } from 'lucide-react';
-import type { ChatMessage } from '@/types';
 
 export const ChatPanel: React.FC = () => {
   const { chatMessages, config } = useStore();
@@ -29,7 +28,7 @@ export const ChatPanel: React.FC = () => {
           </div>
         )}
 
-        {chatMessages.map((msg: ChatMessage) => (
+        {chatMessages.map((msg: any) => (
           <div
             key={msg.id}
             className={`p-3 rounded-lg ${
