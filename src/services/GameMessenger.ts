@@ -1,24 +1,53 @@
 /**
- * GameMessenger - Sistema de mensajes automáticos para juegos
+ * GameMessenger - Sistema de mensajes automáticos para juegos (TypeScript)
  * Integra chat y TTS automáticamente
  */
 
-class GameMessenger {
-  constructor(ttsService, chatService) {
+import { TTSService } from './TTSService';
+
+interface GameMessageOptions {
+  priority?: boolean;
+  showInChat?: boolean;
+  speakInTTS?: boolean;
+  animation?: string | null;
+  delay?: number;
+}
+
+interface SequenceMessage {
+  text: string;
+  animation?: string;
+  delay?: number;
+}
+
+interface VRMController {
+  playAnimation: (name: string) => void;
+}
+
+interface ChatService {
+  addSystemMessage: (message: string) => void;
+}
+
+export class GameMessenger {
+  private tts: TTSService | undefined;
+  private chat: ChatService | undefined;
+  private animationQueue: string[];
+  private vrmController: VRMController | null;
+
+  constructor(ttsService?: TTSService, chatService?: ChatService) {
     this.tts = ttsService;
     this.chat = chatService;
     this.animationQueue = [];
     this.vrmController = null;
   }
   
-  setVRMController(controller) {
+  setVRMController(controller: VRMController): void {
     this.vrmController = controller;
   }
   
   /**
    * Enviar mensaje de juego con TTS y animaciones automáticas
    */
-  sendGameMessage(message, options = {}) {
+  sendGameMessage(message: string, options: GameMessageOptions = {}): void {
     const {
       priority = false,
       showInChat = true,
@@ -27,7 +56,7 @@ class GameMessenger {
       delay = 0
     } = options;
     
-    const execute = () => {
+    const execute = (): void => {
       // Construir mensaje completo con animación
       const fullMessage = animation 
         ? `${message} [${animation.toUpperCase()}]`
@@ -60,7 +89,7 @@ class GameMessenger {
   /**
    * Mensaje de bienvenida de juego
    */
-  sendGameWelcome(gameName, commands, tips = '') {
+  sendGameWelcome(gameName: string, commands: string, tips: string = ''): void {
     let message = `¡Bienvenido a ${gameName}!`;
     if (commands) message += ` ${commands}`;
     if (tips) message += ` ${tips}`;
@@ -74,7 +103,7 @@ class GameMessenger {
   /**
    * Mensaje de movimiento exitoso
    */
-  sendMoveSuccess(move, details = '', animation = 'CLAP') {
+  sendMoveSuccess(move: string, details: string = '', animation: string = 'CLAP'): void {
     let message = `¡Excelente! ${move}`;
     if (details) message += `. ${details}`;
     
@@ -86,7 +115,7 @@ class GameMessenger {
   /**
    * Mensaje de movimiento inválido
    */
-  sendMoveInvalid(reason, suggestion = '') {
+  sendMoveInvalid(reason: string, suggestion: string = ''): void {
     let message = `Movimiento inválido. ${reason}`;
     if (suggestion) message += ` ${suggestion}`;
     
@@ -98,7 +127,7 @@ class GameMessenger {
   /**
    * Mensaje de victoria
    */
-  sendVictory(winner, score = '') {
+  sendVictory(winner: string, score: string = ''): void {
     let message = `¡${winner} ha ganado la partida! ¡Felicitaciones!`;
     if (score) message += ` ${score}`;
     
@@ -111,7 +140,7 @@ class GameMessenger {
   /**
    * Mensaje de empate
    */
-  sendDraw(message = '¡Es un empate!') {
+  sendDraw(message: string = '¡Es un empate!'): void {
     this.sendGameMessage(message, {
       priority: true,
       animation: 'THINK'
@@ -121,7 +150,7 @@ class GameMessenger {
   /**
    * Mensaje de turno
    */
-  sendTurnChange(player) {
+  sendTurnChange(player: string): void {
     this.sendGameMessage(`Turno de ${player}`, {
       animation: 'POINT'
     });
@@ -130,7 +159,7 @@ class GameMessenger {
   /**
    * Mensaje de puntuación
    */
-  sendScore(scores) {
+  sendScore(scores: Record<string, number>): void {
     const message = Object.entries(scores)
       .map(([player, score]) => `${player}: ${score}`)
       .join(', ');
@@ -143,7 +172,7 @@ class GameMessenger {
   /**
    * Mensaje de ayuda
    */
-  sendHelp(commands) {
+  sendHelp(commands: string): void {
     this.sendGameMessage(`Comandos disponibles: ${commands}`, {
       animation: 'THINK'
     });
@@ -152,7 +181,7 @@ class GameMessenger {
   /**
    * Mensaje de captura (para damas/ajedrez)
    */
-  sendCapture(piece, position) {
+  sendCapture(piece: string, position: string): void {
     this.sendGameMessage(`¡Captura increíble! ${piece} en ${position}`, {
       animation: 'CELEBRATE'
     });
@@ -161,7 +190,7 @@ class GameMessenger {
   /**
    * Mensaje de promoción (para damas)
    */
-  sendPromotion(position) {
+  sendPromotion(position: string): void {
     this.sendGameMessage(`¡Promoción a dama en ${position}!`, {
       animation: 'CELEBRATE'
     });
@@ -170,7 +199,7 @@ class GameMessenger {
   /**
    * Mensaje de jaque (para ajedrez)
    */
-  sendCheck(player) {
+  sendCheck(player: string): void {
     this.sendGameMessage(`¡Jaque al ${player}!`, {
       priority: true,
       animation: 'SURPRISED'
@@ -180,7 +209,7 @@ class GameMessenger {
   /**
    * Mensaje de jaque mate (para ajedrez)
    */
-  sendCheckmate(winner) {
+  sendCheckmate(winner: string): void {
     this.sendGameMessage(`¡Jaque mate! ${winner} gana la partida`, {
       priority: true,
       animation: 'CELEBRATE'
@@ -190,7 +219,7 @@ class GameMessenger {
   /**
    * Mensaje personalizado con múltiples animaciones
    */
-  sendCustom(message, animations = [], priority = false) {
+  sendCustom(message: string, animations: string[] = [], priority: boolean = false): void {
     // Añadir todas las animaciones al mensaje
     const animTags = animations.map(a => `[${a.toUpperCase()}]`).join(' ');
     const fullMessage = `${message} ${animTags}`;
@@ -203,7 +232,7 @@ class GameMessenger {
   /**
    * Secuencia de mensajes con delays
    */
-  async sendSequence(messages) {
+  async sendSequence(messages: SequenceMessage[]): Promise<void> {
     for (const msg of messages) {
       const { text, animation, delay = 1000 } = msg;
       
@@ -218,7 +247,7 @@ class GameMessenger {
   /**
    * Ejecutar animación en VRM
    */
-  playAnimation(animationName) {
+  playAnimation(animationName: string): void {
     if (!this.vrmController) return;
     
     try {
@@ -231,7 +260,7 @@ class GameMessenger {
   /**
    * Limpiar cola de mensajes
    */
-  clear() {
+  clear(): void {
     if (this.tts) {
       this.tts.clearQueue();
     }
@@ -239,9 +268,5 @@ class GameMessenger {
   }
 }
 
-// Exportar
-if (typeof window !== 'undefined') {
-  window.GameMessenger = GameMessenger;
-}
-
+// Export default también para compatibilidad
 export default GameMessenger;
