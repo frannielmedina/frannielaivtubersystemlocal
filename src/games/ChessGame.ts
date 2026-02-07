@@ -1,289 +1,180 @@
 /**
- * ChessGame - Chess game logic wrapper
- * Handles chess.js and adds AI functionality
+ * ChessGame - Compatible with Next.js and Vercel
+ * Uses dynamic import to avoid SSR issues with chess.js
  */
 
-import { Chess } from 'chess.js';
+import type { ChessMove } from '@/types';
 
-type Color = 'white' | 'black';
+// Dynamic import for chess.js to avoid SSR issues
+let Chess: any = null;
 
-interface MoveResult {
-  isCheck: boolean;
-  isCheckmate: boolean;
-  isDraw: boolean;
-  captured?: string;
-  from: string;
-  to: string;
+async function loadChess() {
+  if (typeof window !== 'undefined' && !Chess) {
+    try {
+      const chessModule = await import('chess.js');
+      Chess = chessModule.Chess;
+    } catch (error) {
+      console.error('Failed to load chess.js:', error);
+    }
+  }
+  return Chess;
 }
 
 export class ChessGame {
-  private chess: Chess;
-  private aiColor: Color;
-  private onAIMove?: (move: MoveResult) => Promise<void>;
+  private game: any = null;
+  private onMove: (move: ChessMove) => void;
+  private aiColor: 'w' | 'b';
+  private initialized: boolean = false;
 
-  constructor(aiColor: Color, onAIMove?: (move: MoveResult) => Promise<void>) {
-    // Try different ways to instantiate Chess
+  constructor(aiColor: 'white' | 'black', onMove: (move: ChessMove) => void) {
+    this.aiColor = aiColor === 'white' ? 'w' : 'b';
+    this.onMove = onMove;
+    this.initialize();
+  }
+
+  private async initialize() {
+    const ChessConstructor = await loadChess();
+    if (ChessConstructor) {
+      this.game = new ChessConstructor();
+      this.initialized = true;
+    }
+  }
+
+  async waitForInit() {
+    let attempts = 0;
+    while (!this.initialized && attempts < 50) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      attempts++;
+    }
+    return this.initialized;
+  }
+
+  makePlayerMove(from: string, to: string): ChessMove | null {
+    if (!this.game) return null;
+
     try {
-      this.chess = new Chess();
-    } catch (e) {
-      // Fallback for different chess.js versions
-      const ChessConstructor = Chess as any;
-      if (typeof ChessConstructor === 'function') {
-        this.chess = new ChessConstructor();
-      } else if (ChessConstructor.Chess) {
-        this.chess = new ChessConstructor.Chess();
-      } else {
-        throw new Error('Unable to initialize chess.js');
-      }
-    }
-    
-    this.aiColor = aiColor;
-    this.onAIMove = onAIMove;
-  }
-
-  /**
-   * Get current board state
-   */
-  getBoard(): (string | null)[][] {
-    const board: (string | null)[][] = [];
-    const asciiBoard = this.chess.board();
-
-    for (let i = 0; i < 8; i++) {
-      const row: (string | null)[] = [];
-      for (let j = 0; j < 8; j++) {
-        const piece = asciiBoard[i][j];
-        if (piece) {
-          const color = piece.color === 'w' ? 'w' : 'b';
-          const type = piece.type;
-          row.push(`${color}${type}`);
-        } else {
-          row.push(null);
-        }
-      }
-      board.push(row);
-    }
-
-    return board;
-  }
-
-  /**
-   * Get legal moves from a square
-   */
-  getLegalMoves(square: string): string[] {
-    try {
-      const moves = this.chess.moves({ square: square as any, verbose: true });
-      return moves.map((move: any) => move.to);
-    } catch {
-      return [];
-    }
-  }
-
-  /**
-   * Make player move
-   */
-  makePlayerMove(from: string, to: string): MoveResult | null {
-    try {
-      const move = this.chess.move({
-        from: from as any,
-        to: to as any,
-        promotion: 'q' // Always promote to queen
-      });
-
-      if (move) {
-        return {
-          isCheck: this.chess.isCheck(),
-          isCheckmate: this.chess.isCheckmate(),
-          isDraw: this.chess.isDraw(),
-          captured: move.captured as string | undefined,
-          from: move.from,
-          to: move.to
-        };
-      }
-
-      return null;
-    } catch (error) {
-      console.error('Error making move:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Make AI move
-   */
-  async makeAIMove(): Promise<void> {
-    if (this.isGameOver()) return;
-
-    // Simulate thinking time
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const move = this.getBestMove();
-    
-    if (move) {
-      const result = this.chess.move(move);
+      const move = this.game.move({ from, to, promotion: 'q' });
       
-      if (result && this.onAIMove) {
-        await this.onAIMove({
-          isCheck: this.chess.isCheck(),
-          isCheckmate: this.chess.isCheckmate(),
-          isDraw: this.chess.isDraw(),
-          captured: result.captured as string | undefined,
-          from: result.from,
-          to: result.to
-        });
-      }
+      if (!move) return null;
+
+      const chessMove: ChessMove = {
+        from: move.from,
+        to: move.to,
+        piece: move.piece,
+        captured: move.captured,
+        isCheck: this.game.isCheck(),
+        isCheckmate: this.game.isCheckmate(),
+      };
+
+      this.onMove(chessMove);
+      return chessMove;
+    } catch (error) {
+      console.error('Invalid move:', error);
+      return null;
     }
   }
 
-  /**
-   * Get best move using simple evaluation
-   */
-  private getBestMove(): any {
-    const moves = this.chess.moves({ verbose: true });
+  async makeAIMove(): Promise<ChessMove | null> {
+    if (!this.game || this.game.isGameOver()) return null;
+
+    // Simple AI: choose random legal move with some basic strategy
+    const possibleMoves = this.game.moves({ verbose: true });
     
-    if (moves.length === 0) return null;
+    if (possibleMoves.length === 0) return null;
 
-    // Simple AI: evaluate each move
-    let bestMove = moves[0];
-    let bestScore = -Infinity;
+    // Prioritize captures and checks
+    const captureMoves = possibleMoves.filter((m: any) => m.captured);
+    const checkMoves = possibleMoves.filter((m: any) => {
+      this.game.move(m);
+      const isCheck = this.game.isCheck();
+      this.game.undo();
+      return isCheck;
+    });
 
-    for (const move of moves) {
-      this.chess.move(move);
-      const score = this.evaluateBoard();
-      this.chess.undo();
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMove = move;
-      }
+    let selectedMove;
+    
+    if (checkMoves.length > 0 && Math.random() > 0.3) {
+      selectedMove = checkMoves[Math.floor(Math.random() * checkMoves.length)];
+    } else if (captureMoves.length > 0 && Math.random() > 0.5) {
+      selectedMove = captureMoves[Math.floor(Math.random() * captureMoves.length)];
+    } else {
+      selectedMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
     }
 
-    return bestMove;
-  }
+    const move = this.game.move(selectedMove);
 
-  /**
-   * Evaluate board position
-   */
-  private evaluateBoard(): number {
-    let score = 0;
-    const board = this.chess.board();
-    const pieceValues: Record<string, number> = {
-      'p': 1,
-      'n': 3,
-      'b': 3,
-      'r': 5,
-      'q': 9,
-      'k': 0
+    const chessMove: ChessMove = {
+      from: move.from,
+      to: move.to,
+      piece: move.piece,
+      captured: move.captured,
+      isCheck: this.game.isCheck(),
+      isCheckmate: this.game.isCheckmate(),
     };
 
-    for (let i = 0; i < 8; i++) {
-      for (let j = 0; j < 8; j++) {
-        const piece = board[i][j];
-        if (piece) {
-          const value = pieceValues[piece.type] || 0;
-          
-          if (piece.color === (this.aiColor === 'white' ? 'w' : 'b')) {
-            score += value;
-          } else {
-            score -= value;
-          }
-        }
-      }
-    }
+    // Simulate thinking time
+    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
 
-    // Bonuses
-    if (this.chess.isCheckmate()) {
-      score = this.chess.turn() === (this.aiColor === 'white' ? 'w' : 'b') ? -10000 : 10000;
-    } else if (this.chess.isCheck()) {
-      score += this.chess.turn() === (this.aiColor === 'white' ? 'w' : 'b') ? -50 : 50;
-    }
-
-    return score;
+    this.onMove(chessMove);
+    return chessMove;
   }
 
-  /**
-   * Get current turn
-   */
-  turn(): 'w' | 'b' {
-    return this.chess.turn();
+  getPGN(): string {
+    return this.game?.pgn() || '';
   }
 
-  /**
-   * Check if game is over
-   */
-  isGameOver(): boolean {
-    return this.chess.isGameOver();
-  }
-
-  /**
-   * Check if in check
-   */
-  isCheck(): boolean {
-    return this.chess.isCheck();
-  }
-
-  /**
-   * Check if checkmate
-   */
-  isCheckmate(): boolean {
-    return this.chess.isCheckmate();
-  }
-
-  /**
-   * Check if draw
-   */
-  isDraw(): boolean {
-    return this.chess.isDraw() || this.chess.isStalemate() || 
-           this.chess.isThreefoldRepetition() || this.chess.isInsufficientMaterial();
-  }
-
-  /**
-   * Get winner
-   */
-  getWinner(): Color | null {
-    if (!this.isCheckmate()) return null;
-    return this.chess.turn() === 'w' ? 'black' : 'white';
-  }
-
-  /**
-   * Reset game
-   */
-  reset(): void {
-    this.chess.reset();
-  }
-
-  /**
-   * Get FEN (board representation)
-   */
   getFEN(): string {
-    return this.chess.fen();
+    return this.game?.fen() || '';
   }
 
-  /**
-   * Load FEN
-   */
-  loadFEN(fen: string): boolean {
-    try {
-      this.chess.load(fen);
-      return true;
-    } catch {
-      return false;
+  isGameOver(): boolean {
+    return this.game?.isGameOver() || false;
+  }
+
+  isCheck(): boolean {
+    return this.game?.isCheck() || false;
+  }
+
+  isCheckmate(): boolean {
+    return this.game?.isCheckmate() || false;
+  }
+
+  isDraw(): boolean {
+    return this.game?.isDraw() || false;
+  }
+
+  getWinner(): 'white' | 'black' | 'draw' | null {
+    if (!this.game || !this.isGameOver()) return null;
+    if (this.isDraw()) return 'draw';
+    
+    // The side to move when game is over lost
+    return this.game.turn() === 'w' ? 'black' : 'white';
+  }
+
+  turn(): 'w' | 'b' {
+    return this.game?.turn() || 'w';
+  }
+
+  reset(): void {
+    this.game?.reset();
+  }
+
+  getBoard(): string[][] {
+    if (!this.game) {
+      // Return empty board
+      return Array(8).fill(null).map(() => Array(8).fill(''));
     }
+
+    const board = this.game.board();
+    return board.map((row: any) => 
+      row.map((square: any) => 
+        square ? `${square.color}${square.type}` : ''
+      )
+    );
   }
 
-  /**
-   * Get move history
-   */
-  getHistory(): string[] {
-    return this.chess.history();
-  }
-
-  /**
-   * Get last move
-   */
-  getLastMove(): any {
-    const history = this.chess.history({ verbose: true });
-    return history.length > 0 ? history[history.length - 1] : null;
+  getLegalMoves(square: string): string[] {
+    if (!this.game) return [];
+    return this.game.moves({ square, verbose: true }).map((m: any) => m.to);
   }
 }
-
-export default ChessGame;
