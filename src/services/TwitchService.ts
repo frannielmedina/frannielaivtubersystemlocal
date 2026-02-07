@@ -11,31 +11,55 @@ export class TwitchService {
   }
 
   async connect(onMessage: (message: TwitchMessage) => void): Promise<void> {
-    if (!this.config.enabled || !this.config.token || !this.config.channel) {
+    if (!this.config.enabled || !this.config.channel) {
       throw new Error('Configuración de Twitch incompleta');
     }
 
     this.messageCallback = onMessage;
 
-    this.client = new tmi.Client({
+    // Build client options
+    const clientOptions: tmi.Options = {
       options: { debug: false },
       connection: {
         reconnect: true,
         secure: true,
       },
-      identity: {
-        username: this.config.username,
-        password: this.config.token,
-      },
       channels: [this.config.channel],
-    });
+    };
+
+    // If token is provided, use authenticated mode
+    // Otherwise, connect anonymously (read-only)
+    if (this.config.token && this.config.token.trim() !== '') {
+      clientOptions.identity = {
+        username: this.config.username || 'mikobot',
+        password: this.config.token,
+      };
+      console.log('🔐 Connecting to Twitch with authentication');
+    } else {
+      // Anonymous connection (read-only)
+      clientOptions.identity = {
+        username: 'justinfan' + Math.floor(Math.random() * 100000),
+      };
+      console.log('👤 Connecting to Twitch anonymously (read-only mode)');
+    }
+
+    this.client = new tmi.Client(clientOptions);
 
     this.client.on('message', this.handleMessage.bind(this));
-    this.client.on('connected', () => {
-      console.log('✅ Conectado a Twitch');
+    
+    this.client.on('connected', (address, port) => {
+      console.log('✅ Connected to Twitch:', address, port);
+      if (!this.config.token || this.config.token.trim() === '') {
+        console.log('ℹ️  Read-only mode: Can receive messages but cannot send');
+      }
     });
-    this.client.on('disconnected', () => {
-      console.log('❌ Desconectado de Twitch');
+    
+    this.client.on('disconnected', (reason) => {
+      console.log('❌ Disconnected from Twitch:', reason);
+    });
+
+    this.client.on('reconnect', () => {
+      console.log('🔄 Reconnecting to Twitch...');
     });
 
     await this.client.connect();
@@ -70,8 +94,22 @@ export class TwitchService {
   }
 
   async sendMessage(message: string): Promise<void> {
-    if (this.client && this.config.channel) {
+    if (!this.client || !this.config.channel) {
+      console.warn('⚠️  Cannot send message: Not connected');
+      return;
+    }
+
+    // Check if we have authentication
+    if (!this.config.token || this.config.token.trim() === '') {
+      console.warn('⚠️  Cannot send message: Read-only mode (no OAuth token)');
+      return;
+    }
+
+    try {
       await this.client.say(this.config.channel, message);
+      console.log('📤 Message sent:', message);
+    } catch (error) {
+      console.error('❌ Error sending message:', error);
     }
   }
 
@@ -79,6 +117,7 @@ export class TwitchService {
     if (this.client) {
       await this.client.disconnect();
       this.client = null;
+      console.log('👋 Disconnected from Twitch');
     }
   }
 
@@ -88,5 +127,11 @@ export class TwitchService {
 
   isConnected(): boolean {
     return this.client?.readyState() === 'OPEN';
+  }
+
+  canSendMessages(): boolean {
+    return this.isConnected() && 
+           this.config.token !== undefined && 
+           this.config.token.trim() !== '';
   }
 }
