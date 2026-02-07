@@ -1,25 +1,135 @@
-Failed to compile.
-04:49:57.046 
-04:49:57.046 
-./src/services/STTService.ts:68:16
-04:49:57.046 
-Type error: Expected 1 arguments, but got 0.
-04:49:57.046 
-04:49:57.046 
-  66 |       if (this.config.enabled && this.config.continuous && this.isListening) {
-04:49:57.046 
-  67 |         setTimeout(() => {
-04:49:57.046 
-> 68 |           this.start();
-04:49:57.046 
-     |                ^
-04:49:57.047 
-  69 |         }, 100);
-04:49:57.047 
-  70 |       } else {
-04:49:57.047 
-  71 |         this.isListening = false;
-04:49:57.075 
-Next.js build worker exited with code: 1 and signal: null
-04:49:57.138 
-Error: Command "npm run build" exited with 1
+import type { STTConfig } from '@/types';
+
+export class STTService {
+  private config: STTConfig;
+  private recognition: any = null;
+  private isListening: boolean = false;
+  private onResultCallback: ((text: string, isFinal: boolean) => void) | null = null;
+
+  constructor(config: STTConfig) {
+    this.config = config;
+    this.initializeRecognition();
+  }
+
+  private initializeRecognition() {
+    if (typeof window === 'undefined') return;
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      console.warn('Speech Recognition not available in this browser');
+      return;
+    }
+
+    this.recognition = new SpeechRecognition();
+    this.recognition.continuous = this.config.continuous;
+    this.recognition.interimResults = this.config.interimResults;
+    this.recognition.lang = this.config.language;
+
+    this.recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' ';
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      if (this.onResultCallback) {
+        if (finalTranscript) {
+          this.onResultCallback(finalTranscript.trim(), true);
+        } else if (interimTranscript) {
+          this.onResultCallback(interimTranscript.trim(), false);
+        }
+      }
+    };
+
+    this.recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      
+      if (event.error === 'no-speech') {
+        console.log('No speech detected, continuing...');
+      } else if (event.error === 'aborted') {
+        console.log('Speech recognition aborted');
+      }
+    };
+
+    this.recognition.onend = () => {
+      console.log('Speech recognition ended');
+      
+      if (this.config.enabled && this.config.continuous && this.isListening && this.onResultCallback) {
+        setTimeout(() => {
+          if (this.onResultCallback) {
+            this.start(this.onResultCallback);
+          }
+        }, 100);
+      } else {
+        this.isListening = false;
+      }
+    };
+  }
+
+  start(onResult: (text: string, isFinal: boolean) => void): void {
+    if (!this.recognition) {
+      console.error('Speech Recognition not initialized');
+      return;
+    }
+
+    if (!this.config.enabled) {
+      console.warn('STT is disabled in config');
+      return;
+    }
+
+    if (this.isListening) {
+      console.warn('Already listening');
+      return;
+    }
+
+    this.onResultCallback = onResult;
+    this.isListening = true;
+
+    try {
+      this.recognition.start();
+      console.log('Speech recognition started');
+    } catch (error) {
+      console.error('Error starting speech recognition:', error);
+      this.isListening = false;
+    }
+  }
+
+  stop(): void {
+    if (!this.recognition || !this.isListening) return;
+
+    try {
+      this.isListening = false;
+      this.onResultCallback = null;
+      this.recognition.stop();
+      console.log('Speech recognition stopped');
+    } catch (error) {
+      console.error('Error stopping speech recognition:', error);
+    }
+  }
+
+  updateConfig(config: STTConfig): void {
+    this.config = config;
+    
+    if (this.recognition) {
+      this.recognition.continuous = config.continuous;
+      this.recognition.interimResults = config.interimResults;
+      this.recognition.lang = config.language;
+    }
+  }
+
+  isAvailable(): boolean {
+    return this.recognition !== null;
+  }
+
+  isActive(): boolean {
+    return this.isListening;
+  }
+}
