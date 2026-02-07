@@ -1,10 +1,9 @@
 /**
- * ChessGame - Clase de lógica del juego de ajedrez
- * Envuelve chess.js y añade funcionalidad de IA
+ * ChessGame - Chess game logic wrapper
+ * Handles chess.js and adds AI functionality
  */
 
 import { Chess } from 'chess.js';
-import type { Move, Square, PieceSymbol } from 'chess.js';
 
 type Color = 'white' | 'black';
 
@@ -12,7 +11,7 @@ interface MoveResult {
   isCheck: boolean;
   isCheckmate: boolean;
   isDraw: boolean;
-  captured?: PieceSymbol;
+  captured?: string;
   from: string;
   to: string;
 }
@@ -23,13 +22,27 @@ export class ChessGame {
   private onAIMove?: (move: MoveResult) => Promise<void>;
 
   constructor(aiColor: Color, onAIMove?: (move: MoveResult) => Promise<void>) {
-    this.chess = new Chess();
+    // Try different ways to instantiate Chess
+    try {
+      this.chess = new Chess();
+    } catch (e) {
+      // Fallback for different chess.js versions
+      const ChessConstructor = Chess as any;
+      if (typeof ChessConstructor === 'function') {
+        this.chess = new ChessConstructor();
+      } else if (ChessConstructor.Chess) {
+        this.chess = new ChessConstructor.Chess();
+      } else {
+        throw new Error('Unable to initialize chess.js');
+      }
+    }
+    
     this.aiColor = aiColor;
     this.onAIMove = onAIMove;
   }
 
   /**
-   * Obtener el tablero actual
+   * Get current board state
    */
   getBoard(): (string | null)[][] {
     const board: (string | null)[][] = [];
@@ -54,22 +67,26 @@ export class ChessGame {
   }
 
   /**
-   * Obtener movimientos legales desde una casilla
+   * Get legal moves from a square
    */
   getLegalMoves(square: string): string[] {
-    const moves = this.chess.moves({ square: square as Square, verbose: true });
-    return moves.map(move => move.to);
+    try {
+      const moves = this.chess.moves({ square: square as any, verbose: true });
+      return moves.map((move: any) => move.to);
+    } catch {
+      return [];
+    }
   }
 
   /**
-   * Realizar movimiento del jugador
+   * Make player move
    */
   makePlayerMove(from: string, to: string): MoveResult | null {
     try {
       const move = this.chess.move({
-        from: from as Square,
-        to: to as Square,
-        promotion: 'q' // Siempre promocionar a reina
+        from: from as any,
+        to: to as any,
+        promotion: 'q' // Always promote to queen
       });
 
       if (move) {
@@ -77,7 +94,7 @@ export class ChessGame {
           isCheck: this.chess.isCheck(),
           isCheckmate: this.chess.isCheckmate(),
           isDraw: this.chess.isDraw(),
-          captured: move.captured as PieceSymbol | undefined,
+          captured: move.captured as string | undefined,
           from: move.from,
           to: move.to
         };
@@ -85,17 +102,18 @@ export class ChessGame {
 
       return null;
     } catch (error) {
+      console.error('Error making move:', error);
       return null;
     }
   }
 
   /**
-   * Realizar movimiento de la IA
+   * Make AI move
    */
   async makeAIMove(): Promise<void> {
     if (this.isGameOver()) return;
 
-    // Esperar un momento para simular "pensamiento"
+    // Simulate thinking time
     await new Promise(resolve => setTimeout(resolve, 500));
 
     const move = this.getBestMove();
@@ -108,7 +126,7 @@ export class ChessGame {
           isCheck: this.chess.isCheck(),
           isCheckmate: this.chess.isCheckmate(),
           isDraw: this.chess.isDraw(),
-          captured: result.captured as PieceSymbol | undefined,
+          captured: result.captured as string | undefined,
           from: result.from,
           to: result.to
         });
@@ -117,14 +135,14 @@ export class ChessGame {
   }
 
   /**
-   * Obtener mejor movimiento de la IA (minimax simple)
+   * Get best move using simple evaluation
    */
-  private getBestMove(): Move | null {
+  private getBestMove(): any {
     const moves = this.chess.moves({ verbose: true });
     
     if (moves.length === 0) return null;
 
-    // IA básica: evaluar cada movimiento
+    // Simple AI: evaluate each move
     let bestMove = moves[0];
     let bestScore = -Infinity;
 
@@ -143,7 +161,7 @@ export class ChessGame {
   }
 
   /**
-   * Evaluar posición del tablero
+   * Evaluate board position
    */
   private evaluateBoard(): number {
     let score = 0;
@@ -172,7 +190,7 @@ export class ChessGame {
       }
     }
 
-    // Bonificaciones adicionales
+    // Bonuses
     if (this.chess.isCheckmate()) {
       score = this.chess.turn() === (this.aiColor === 'white' ? 'w' : 'b') ? -10000 : 10000;
     } else if (this.chess.isCheck()) {
@@ -183,35 +201,35 @@ export class ChessGame {
   }
 
   /**
-   * Obtener turno actual
+   * Get current turn
    */
   turn(): 'w' | 'b' {
     return this.chess.turn();
   }
 
   /**
-   * Verificar si el juego terminó
+   * Check if game is over
    */
   isGameOver(): boolean {
     return this.chess.isGameOver();
   }
 
   /**
-   * Verificar si hay jaque
+   * Check if in check
    */
   isCheck(): boolean {
     return this.chess.isCheck();
   }
 
   /**
-   * Verificar si hay jaque mate
+   * Check if checkmate
    */
   isCheckmate(): boolean {
     return this.chess.isCheckmate();
   }
 
   /**
-   * Verificar si hay empate
+   * Check if draw
    */
   isDraw(): boolean {
     return this.chess.isDraw() || this.chess.isStalemate() || 
@@ -219,7 +237,7 @@ export class ChessGame {
   }
 
   /**
-   * Obtener ganador
+   * Get winner
    */
   getWinner(): Color | null {
     if (!this.isCheckmate()) return null;
@@ -227,21 +245,21 @@ export class ChessGame {
   }
 
   /**
-   * Reiniciar juego
+   * Reset game
    */
   reset(): void {
     this.chess.reset();
   }
 
   /**
-   * Obtener FEN (representación del tablero)
+   * Get FEN (board representation)
    */
   getFEN(): string {
     return this.chess.fen();
   }
 
   /**
-   * Cargar FEN
+   * Load FEN
    */
   loadFEN(fen: string): boolean {
     try {
@@ -253,16 +271,16 @@ export class ChessGame {
   }
 
   /**
-   * Obtener historial de movimientos
+   * Get move history
    */
   getHistory(): string[] {
     return this.chess.history();
   }
 
   /**
-   * Obtener último movimiento
+   * Get last move
    */
-  getLastMove(): Move | null {
+  getLastMove(): any {
     const history = this.chess.history({ verbose: true });
     return history.length > 0 ? history[history.length - 1] : null;
   }
