@@ -8,6 +8,36 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
+// Model options for each provider
+const AI_MODELS = {
+  groq: [
+    { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (Latest, Recommended)' },
+    { value: 'llama-3.1-70b-versatile', label: 'Llama 3.1 70B Versatile' },
+    { value: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant (Fast)' },
+    { value: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B' },
+    { value: 'gemma2-9b-it', label: 'Gemma 2 9B' },
+  ],
+  openrouter: [
+    { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
+    { value: 'openai/gpt-4-turbo', label: 'GPT-4 Turbo' },
+    { value: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B' },
+    { value: 'google/gemini-pro', label: 'Gemini Pro' },
+    { value: 'mistralai/mixtral-8x7b-instruct', label: 'Mixtral 8x7B' },
+  ],
+  mistral: [
+    { value: 'mistral-large-latest', label: 'Mistral Large (Latest)' },
+    { value: 'mistral-medium-latest', label: 'Mistral Medium' },
+    { value: 'mistral-small-latest', label: 'Mistral Small' },
+    { value: 'open-mistral-7b', label: 'Open Mistral 7B' },
+  ],
+  perplexity: [
+    { value: 'llama-3.1-sonar-large-128k-online', label: 'Sonar Large 128K (Online)' },
+    { value: 'llama-3.1-sonar-small-128k-online', label: 'Sonar Small 128K (Online)' },
+    { value: 'llama-3.1-sonar-large-128k-chat', label: 'Sonar Large 128K (Chat)' },
+    { value: 'llama-3.1-sonar-small-128k-chat', label: 'Sonar Small 128K (Chat)' },
+  ],
+};
+
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose }) => {
   const { config, gameState, setConfig, setGameState } = useStore();
   const [localConfig, setLocalConfig] = useState(config);
@@ -19,7 +49,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
 
   const handleSave = () => {
     setConfig(localConfig);
-    // Save to localStorage for persistence
     localStorage.setItem('vtuber-config', JSON.stringify(localConfig));
     onClose();
   };
@@ -29,7 +58,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     setLocalConfig({ ...localConfig });
   };
 
-  // VRM Model Upload
   const handleVRMUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -50,7 +78,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     reader.readAsArrayBuffer(file);
   };
 
-  // Voice Clone Upload
   const handleVoiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -71,7 +98,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     reader.readAsArrayBuffer(file);
   };
 
-  // Save Config to File
   const handleSaveConfig = () => {
     const configJSON = JSON.stringify(localConfig, null, 2);
     const blob = new Blob([configJSON], { type: 'application/json' });
@@ -83,7 +109,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     URL.revokeObjectURL(url);
   };
 
-  // Load Config from File
   const handleLoadConfig = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -100,6 +125,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
     };
     reader.readAsText(file);
   };
+
+  const currentModels = AI_MODELS[localConfig.ai.provider as keyof typeof AI_MODELS] || [];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
@@ -146,7 +173,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                     value={localConfig.vtuber.modelPath}
                     readOnly
                     placeholder="No model loaded"
-                    className="flex-1 px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
+                    className="flex-1 px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 text-sm"
                   />
                   <button
                     onClick={() => vrmInputRef.current?.click()}
@@ -238,18 +265,44 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 <label className="block text-sm text-gray-300 mb-1">Provider</label>
                 <select
                   value={localConfig.ai.provider}
+                  onChange={(e) => {
+                    const provider = e.target.value as any;
+                    const defaultModel = AI_MODELS[provider as keyof typeof AI_MODELS]?.[0]?.value || '';
+                    setLocalConfig({
+                      ...localConfig,
+                      ai: { 
+                        ...localConfig.ai, 
+                        provider,
+                        model: defaultModel 
+                      },
+                    });
+                  }}
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
+                >
+                  <option value="groq">Groq (Recommended - Free)</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="mistral">Mistral AI</option>
+                  <option value="perplexity">Perplexity</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Model</label>
+                <select
+                  value={localConfig.ai.model}
                   onChange={(e) =>
                     setLocalConfig({
                       ...localConfig,
-                      ai: { ...localConfig.ai, provider: e.target.value as any },
+                      ai: { ...localConfig.ai, model: e.target.value },
                     })
                   }
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 >
-                  <option value="groq">Groq (Recommended)</option>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="mistral">Mistral AI</option>
-                  <option value="perplexity">Perplexity</option>
+                  {currentModels.map((model) => (
+                    <option key={model.value} value={model.value}>
+                      {model.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -267,6 +320,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   placeholder="Enter your API key"
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  {localConfig.ai.provider === 'groq' && 'Get free API key at: console.groq.com'}
+                  {localConfig.ai.provider === 'openrouter' && 'Get API key at: openrouter.ai'}
+                  {localConfig.ai.provider === 'mistral' && 'Get API key at: console.mistral.ai'}
+                  {localConfig.ai.provider === 'perplexity' && 'Get API key at: perplexity.ai'}
+                </p>
               </div>
 
               <div>
@@ -345,7 +404,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                       value={localConfig.tts.cloneVoicePath || ''}
                       readOnly
                       placeholder="No voice file loaded"
-                      className="flex-1 px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
+                      className="flex-1 px-3 py-2 bg-gray-800 text-white rounded border border-gray-700 text-sm"
                     />
                     <button
                       onClick={() => voiceInputRef.current?.click()}
@@ -472,19 +531,41 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
               </label>
 
               <div>
-                <label className="block text-sm text-gray-300 mb-1">Channel</label>
+                <label className="block text-sm text-gray-300 mb-1">Bot Username</label>
+                <input
+                  type="text"
+                  value={localConfig.twitch.username}
+                  onChange={(e) =>
+                    setLocalConfig({
+                      ...localConfig,
+                      twitch: { ...localConfig.twitch, username: e.target.value.toLowerCase() },
+                    })
+                  }
+                  placeholder="your_bot_username"
+                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Twitch username for the bot (lowercase)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-300 mb-1">Channel to Join</label>
                 <input
                   type="text"
                   value={localConfig.twitch.channel}
                   onChange={(e) =>
                     setLocalConfig({
                       ...localConfig,
-                      twitch: { ...localConfig.twitch, channel: e.target.value },
+                      twitch: { ...localConfig.twitch, channel: e.target.value.toLowerCase() },
                     })
                   }
-                  placeholder="your_channel"
+                  placeholder="channel_name"
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Channel to join (without #, lowercase)
+                </p>
               </div>
 
               <div>
@@ -502,7 +583,18 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Get token at: https://twitchapps.com/tmi/
+                  Get token at: <a href="https://twitchapps.com/tmi/" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300">twitchapps.com/tmi</a>
+                </p>
+              </div>
+
+              <div className="bg-blue-900 bg-opacity-30 border border-blue-700 rounded p-3">
+                <p className="text-sm text-blue-300">
+                  <strong>📝 Twitch Setup:</strong><br/>
+                  1. Get OAuth token from twitchapps.com/tmi<br/>
+                  2. Enter your bot's username (can be your main account)<br/>
+                  3. Enter the channel name to join<br/>
+                  4. Save settings and refresh the page<br/>
+                  5. Check browser console for connection status
                 </p>
               </div>
             </div>
