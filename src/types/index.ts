@@ -1,559 +1,189 @@
 'use client';
-import React, { useState, useRef } from 'react';
+
+import React, { useState, useEffect } from 'react';
+import { VTuberScene } from '@/components/VTuberScene';
+import { SettingsPanel } from '@/components/SettingsPanel';
+import { CollabMode } from '@/components/CollabMode';
+import { GamingMode } from '@/components/GamingMode';
+import { ChessBoard } from '@/components/games/ChessBoard';
+import { CheckersBoard } from '@/components/games/CheckersBoard';
+import { ReversiBoard } from '@/components/games/ReversiBoard';
+import { ChatPanel } from '@/components/ChatPanel';
 import { useStore } from '@/store/useStore';
-import { X, Save, Upload, Download, FileUp } from 'lucide-react';
+import { AIService } from '@/services/AIService';
+import { TTSService } from '@/services/TTSService';
+import { TwitchService } from '@/services/TwitchService';
+import { Settings, MessageCircle, Video, Mic } from 'lucide-react';
 
-interface SettingsPanelProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
+export default function Home() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
+  const { config, addChatMessage, setAnimation, setConfig } = useStore();
+  
+  const [aiService] = useState(() => new AIService(config.ai));
+  const [ttsService] = useState(() => new TTSService(config.tts));
+  const [twitchService] = useState(() => new TwitchService(config.twitch));
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose }) => {
-  const { config, gameState, setConfig, setGameState } = useStore();
-  const [localConfig, setLocalConfig] = useState(config);
-  const vrmInputRef = useRef<HTMLInputElement>(null);
-  const voiceInputRef = useRef<HTMLInputElement>(null);
-  const configInputRef = useRef<HTMLInputElement>(null);
-
-  if (!isOpen) return null;
-
-  const handleSave = () => {
-    setConfig(localConfig);
-    // Save to localStorage for persistence
-    localStorage.setItem('vtuber-config', JSON.stringify(localConfig));
-    onClose();
-  };
-
-  const handleGameChange = (game: 'chess' | 'checkers' | 'reversi') => {
-    setGameState({ currentGame: game, winner: null, moveHistory: [] });
-    setLocalConfig({ ...localConfig });
-  };
-
-  // VRM Model Upload
-  const handleVRMUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const blob = new Blob([event.target?.result as ArrayBuffer], { type: 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      
-      setLocalConfig({
-        ...localConfig,
-        vtuber: {
-          ...localConfig.vtuber,
-          modelPath: url,
-        },
-      });
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  // Voice Clone Upload
-  const handleVoiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const blob = new Blob([event.target?.result as ArrayBuffer], { type: 'audio/wav' });
-      const url = URL.createObjectURL(blob);
-      
-      setLocalConfig({
-        ...localConfig,
-        tts: {
-          ...localConfig.tts,
-          cloneVoicePath: url,
-        },
-      });
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  // Save Config to File
-  const handleSaveConfig = () => {
-    const configJSON = JSON.stringify(localConfig, null, 2);
-    const blob = new Blob([configJSON], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${localConfig.vtuber.name || 'vtuber'}-config.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Load Config from File
-  const handleLoadConfig = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
+  // Load saved config from localStorage on mount
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('vtuber-config');
+    if (savedConfig) {
       try {
-        const loadedConfig = JSON.parse(event.target?.result as string);
-        setLocalConfig(loadedConfig);
-        alert('Configuration loaded successfully! Click Save to apply.');
+        const parsed = JSON.parse(savedConfig);
+        setConfig(parsed);
       } catch (error) {
-        alert('Error loading configuration file. Please check the file format.');
+        console.error('Error loading saved config:', error);
+      }
+    }
+  }, [setConfig]);
+
+  useEffect(() => {
+    aiService.updateConfig(config.ai);
+    ttsService.updateConfig(config.tts);
+    
+    if (config.twitch.enabled && !twitchService.isConnected()) {
+      twitchService.connect(async (message) => {
+        addChatMessage({
+          id: Date.now().toString(),
+          username: message.username,
+          message: message.message,
+          timestamp: message.timestamp,
+          color: message.color,
+        });
+
+        // Process message with AI
+        try {
+          const response = await aiService.generateResponse([
+            { role: 'system', content: config.ai.systemPrompt },
+            { role: 'user', content: `${message.username} says: ${message.message}` },
+          ]);
+
+          addChatMessage({
+            id: (Date.now() + 1).toString(),
+            username: config.vtuber.name || 'VTuber',
+            message: response,
+            timestamp: Date.now(),
+            isAI: true,
+            color: '#9333ea',
+          });
+
+          // Speak response
+          await ttsService.speak(response);
+
+          // Random emote
+          const emotes = ['wave', 'celebrate', 'think', 'heart'];
+          const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
+          setAnimation({
+            type: 'emote',
+            name: randomEmote,
+            duration: 2000,
+          });
+
+        } catch (error) {
+          console.error('Error processing message:', error);
+        }
+      });
+    }
+
+    return () => {
+      if (twitchService.isConnected()) {
+        twitchService.disconnect();
       }
     };
-    reader.readAsText(file);
+  }, [config, aiService, ttsService, twitchService, addChatMessage, setAnimation]);
+
+  const gameState = useStore(state => state.gameState);
+
+  // Render modes
+  if (config.appMode === 'collab') {
+    return <CollabMode />;
+  }
+
+  if (config.appMode === 'gaming') {
+    return <GamingMode />;
+  }
+
+  const renderGame = () => {
+    switch (gameState.currentGame) {
+      case 'chess':
+        return <ChessBoard />;
+      case 'checkers':
+        return <CheckersBoard />;
+      case 'reversi':
+        return <ReversiBoard />;
+      default:
+        return (
+          <div className="flex items-center justify-center h-full text-gray-400">
+            <p className="text-xl">Select a game in settings</p>
+          </div>
+        );
+    }
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-80 z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900 rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b border-gray-700">
-          <h2 className="text-2xl font-bold text-white">⚙️ Settings</h2>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-gray-800 rounded transition-colors"
-          >
-            <X size={24} color="white" />
-          </button>
-        </div>
+    <main className="h-screen w-screen overflow-hidden bg-black">
+      <div className="grid grid-cols-12 h-full">
+        {/* VTuber Scene - Left Side */}
+        <div className="col-span-5 relative">
+          <VTuberScene />
+          
+          {/* Controls Overlay */}
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button
+              onClick={() => setConfig({ appMode: 'collab' })}
+              className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors"
+              title="Collab Mode"
+            >
+              <Mic size={24} color="white" />
+            </button>
+            <button
+              onClick={() => setConfig({ appMode: 'gaming' })}
+              className="p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors"
+              title="Gaming Mode"
+            >
+              <Video size={24} color="white" />
+            </button>
+            <button
+              onClick={() => setChatOpen(!chatOpen)}
+              className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors"
+            >
+              <MessageCircle size={24} color="white" />
+            </button>
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors"
+            >
+              <Settings size={24} color="white" />
+            </button>
+          </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-6">
-          {/* VTuber Configuration */}
-          <section>
-            <h3 className="text-xl font-bold text-white mb-3">🎭 VTuber Settings</h3>
-            
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">VTuber Name</label>
-                <input
-                  type="text"
-                  value={localConfig.vtuber.name || 'Miko'}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      vtuber: { ...localConfig.vtuber, name: e.target.value },
-                    })
-                  }
-                  placeholder="Enter VTuber name"
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">VRM Model</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={localConfig.vtuber.modelPath}
-                    readOnly
-                    placeholder="No model loaded"
-                    className="flex-1 px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                  />
-                  <button
-                    onClick={() => vrmInputRef.current?.click()}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-2 text-white transition-colors"
-                  >
-                    <Upload size={16} /> Load VRM
-                  </button>
-                  <input
-                    ref={vrmInputRef}
-                    type="file"
-                    accept=".vrm"
-                    onChange={handleVRMUpload}
-                    className="hidden"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Upload a .vrm file from VRoid Studio or VRoid Hub
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">
-                  Scale: {localConfig.vtuber.scale.toFixed(1)}x
-                </label>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  value={localConfig.vtuber.scale}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      vtuber: { ...localConfig.vtuber, scale: parseFloat(e.target.value) },
-                    })
-                  }
-                  className="w-full"
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* Game Selection */}
-          <section>
-            <h3 className="text-xl font-bold text-white mb-3">🎮 Game Selection</h3>
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                onClick={() => handleGameChange('chess')}
-                className={`p-4 rounded border-2 transition-all ${
-                  gameState.currentGame === 'chess'
-                    ? 'border-purple-500 bg-purple-900'
-                    : 'border-gray-700 hover:border-gray-600'
-                }`}
-              >
-                <div className="text-4xl mb-2">♟️</div>
-                <div className="text-white font-semibold">Chess</div>
-              </button>
-              <button
-                onClick={() => handleGameChange('checkers')}
-                className={`p-4 rounded border-2 transition-all ${
-                  gameState.currentGame === 'checkers'
-                    ? 'border-purple-500 bg-purple-900'
-                    : 'border-gray-700 hover:border-gray-600'
-                }`}
-              >
-                <div className="text-4xl mb-2">⚫</div>
-                <div className="text-white font-semibold">Checkers</div>
-              </button>
-              <button
-                onClick={() => handleGameChange('reversi')}
-                className={`p-4 rounded border-2 transition-all ${
-                  gameState.currentGame === 'reversi'
-                    ? 'border-purple-500 bg-purple-900'
-                    : 'border-gray-700 hover:border-gray-600'
-                }`}
-              >
-                <div className="text-4xl mb-2">⚪</div>
-                <div className="text-white font-semibold">Reversi</div>
-              </button>
-            </div>
-          </section>
-
-          {/* AI Configuration */}
-          <section>
-            <h3 className="text-xl font-bold text-white mb-3">🤖 AI Configuration</h3>
-            
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">Provider</label>
-                <select
-                  value={localConfig.ai.provider}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      ai: { ...localConfig.ai, provider: e.target.value as any },
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                >
-                  <option value="groq">Groq (Recommended)</option>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="mistral">Mistral AI</option>
-                  <option value="perplexity">Perplexity</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">API Key</label>
-                <input
-                  type="password"
-                  value={localConfig.ai.apiKey}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      ai: { ...localConfig.ai, apiKey: e.target.value },
-                    })
-                  }
-                  placeholder="Enter your API key"
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">System Prompt</label>
-                <textarea
-                  value={localConfig.ai.systemPrompt}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      ai: { ...localConfig.ai, systemPrompt: e.target.value },
-                    })
-                  }
-                  rows={4}
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* TTS Configuration */}
-          <section>
-            <h3 className="text-xl font-bold text-white mb-3">🔊 Text-to-Speech</h3>
-            
-            <div className="space-y-3">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localConfig.tts.enabled}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      tts: { ...localConfig.tts, enabled: e.target.checked },
-                    })
-                  }
-                  className="w-5 h-5"
-                />
-                <span className="text-white">Enable TTS</span>
-              </label>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localConfig.tts.useClone}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      tts: { ...localConfig.tts, useClone: e.target.checked },
-                    })
-                  }
-                  className="w-5 h-5"
-                />
-                <span className="text-white">Use Voice Clone (requires backend)</span>
-              </label>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localConfig.tts.multilingualDetection}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      tts: { ...localConfig.tts, multilingualDetection: e.target.checked },
-                    })
-                  }
-                  className="w-5 h-5"
-                />
-                <span className="text-white">Multilingual Detection</span>
-              </label>
-
-              {localConfig.tts.useClone && (
-                <div>
-                  <label className="block text-sm text-gray-300 mb-1">Voice Clone Reference Audio</label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={localConfig.tts.cloneVoicePath || ''}
-                      readOnly
-                      placeholder="No voice file loaded"
-                      className="flex-1 px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                    />
-                    <button
-                      onClick={() => voiceInputRef.current?.click()}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors"
-                    >
-                      <FileUp size={16} /> Upload Voice
-                    </button>
-                    <input
-                      ref={voiceInputRef}
-                      type="file"
-                      accept=".wav,.mp3"
-                      onChange={handleVoiceUpload}
-                      className="hidden"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Upload 10-30 seconds of clear audio (WAV or MP3)
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">
-                  Speed: {localConfig.tts.speed.toFixed(1)}x
-                </label>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="2"
-                  step="0.1"
-                  value={localConfig.tts.speed}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      tts: { ...localConfig.tts, speed: parseFloat(e.target.value) },
-                    })
-                  }
-                  className="w-full"
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* STT Configuration */}
-          <section>
-            <h3 className="text-xl font-bold text-white mb-3">🎤 Speech-to-Text</h3>
-            
-            <div className="space-y-3">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localConfig.stt.enabled}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      stt: { ...localConfig.stt, enabled: e.target.checked },
-                    })
-                  }
-                  className="w-5 h-5"
-                />
-                <span className="text-white">Enable STT</span>
-              </label>
-
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">Language</label>
-                <select
-                  value={localConfig.stt.language}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      stt: { ...localConfig.stt, language: e.target.value },
-                    })
-                  }
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                >
-                  <option value="en-US">English (US)</option>
-                  <option value="es-ES">Spanish (Spain)</option>
-                  <option value="es-MX">Spanish (Mexico)</option>
-                  <option value="fr-FR">French</option>
-                  <option value="de-DE">German</option>
-                  <option value="it-IT">Italian</option>
-                  <option value="pt-BR">Portuguese (Brazil)</option>
-                  <option value="ja-JP">Japanese</option>
-                  <option value="ko-KR">Korean</option>
-                  <option value="zh-CN">Chinese (Simplified)</option>
-                </select>
-              </div>
-
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localConfig.stt.continuous}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      stt: { ...localConfig.stt, continuous: e.target.checked },
-                    })
-                  }
-                  className="w-5 h-5"
-                />
-                <span className="text-white">Continuous Recognition</span>
-              </label>
-            </div>
-          </section>
-
-          {/* Twitch Configuration */}
-          <section>
-            <h3 className="text-xl font-bold text-white mb-3">💬 Twitch Integration</h3>
-            
-            <div className="space-y-3">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={localConfig.twitch.enabled}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      twitch: { ...localConfig.twitch, enabled: e.target.checked },
-                    })
-                  }
-                  className="w-5 h-5"
-                />
-                <span className="text-white">Enable Twitch</span>
-              </label>
-
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">Channel</label>
-                <input
-                  type="text"
-                  value={localConfig.twitch.channel}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      twitch: { ...localConfig.twitch, channel: e.target.value },
-                    })
-                  }
-                  placeholder="your_channel"
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm text-gray-300 mb-1">OAuth Token</label>
-                <input
-                  type="password"
-                  value={localConfig.twitch.token}
-                  onChange={(e) =>
-                    setLocalConfig({
-                      ...localConfig,
-                      twitch: { ...localConfig.twitch, token: e.target.value },
-                    })
-                  }
-                  placeholder="oauth:..."
-                  className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Get token at: https://twitchapps.com/tmi/
-                </p>
-              </div>
-            </div>
-          </section>
-
-          {/* Save/Load Configuration */}
-          <section>
-            <h3 className="text-xl font-bold text-white mb-3">💾 Configuration Management</h3>
-            <div className="flex gap-3">
-              <button
-                onClick={handleSaveConfig}
-                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded flex items-center justify-center gap-2 text-white transition-colors"
-              >
-                <Download size={20} /> Export Config
-              </button>
-              <button
-                onClick={() => configInputRef.current?.click()}
-                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center justify-center gap-2 text-white transition-colors"
-              >
-                <Upload size={20} /> Import Config
-              </button>
-              <input
-                ref={configInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleLoadConfig}
-                className="hidden"
-              />
-            </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Save your complete settings to a file, or load a previously saved configuration
+          {/* VTuber Info */}
+          <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg p-4">
+            <h1 className="text-2xl font-bold text-white">
+              🎮 {config.vtuber.name || 'AI VTuber'}
+            </h1>
+            <p className="text-gray-300">
+              {gameState.currentGame === 'chess' && '♟️ Playing Chess'}
+              {gameState.currentGame === 'checkers' && '⚫ Playing Checkers'}
+              {gameState.currentGame === 'reversi' && '⚪ Playing Reversi'}
+              {!gameState.currentGame && '💤 Waiting'}
             </p>
-          </section>
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-6 border-t border-gray-700 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded flex items-center gap-2 transition-colors"
-          >
-            <Save size={20} /> Save Settings
-          </button>
+        {/* Game Board - Center */}
+        <div className="col-span-4 bg-gray-900 p-4">
+          {renderGame()}
+        </div>
+
+        {/* Chat Panel - Right Side */}
+        <div className={`col-span-3 transition-all ${chatOpen ? '' : 'hidden'}`}>
+          <ChatPanel />
         </div>
       </div>
-    </div>
+
+      {/* Settings Modal */}
+      <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    </main>
   );
-};
+}
