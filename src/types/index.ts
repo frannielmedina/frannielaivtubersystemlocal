@@ -1,189 +1,173 @@
-'use client';
+// App Modes
+export type AppMode = 'collab' | 'gaming' | null;
 
-import React, { useState, useEffect } from 'react';
-import { VTuberScene } from '@/components/VTuberScene';
-import { SettingsPanel } from '@/components/SettingsPanel';
-import { CollabMode } from '@/components/CollabMode';
-import { GamingMode } from '@/components/GamingMode';
-import { ChessBoard } from '@/components/games/ChessBoard';
-import { CheckersBoard } from '@/components/games/CheckersBoard';
-import { ReversiBoard } from '@/components/games/ReversiBoard';
-import { ChatPanel } from '@/components/ChatPanel';
-import { useStore } from '@/store/useStore';
-import { AIService } from '@/services/AIService';
-import { TTSService } from '@/services/TTSService';
-import { TwitchService } from '@/services/TwitchService';
-import { Settings, MessageCircle, Video, Mic } from 'lucide-react';
+// Game Types
+export type GameType = 'chess' | 'checkers' | 'reversi' | null;
 
-export default function Home() {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(true);
-  const { config, addChatMessage, setAnimation, setConfig } = useStore();
-  
-  const [aiService] = useState(() => new AIService(config.ai));
-  const [ttsService] = useState(() => new TTSService(config.tts));
-  const [twitchService] = useState(() => new TwitchService(config.twitch));
+export interface ChessMove {
+  from: string;
+  to: string;
+  piece: string;
+  captured?: string;
+  isCheck?: boolean;
+  isCheckmate?: boolean;
+}
 
-  // Load saved config from localStorage on mount
-  useEffect(() => {
-    const savedConfig = localStorage.getItem('vtuber-config');
-    if (savedConfig) {
-      try {
-        const parsed = JSON.parse(savedConfig);
-        setConfig(parsed);
-      } catch (error) {
-        console.error('Error loading saved config:', error);
-      }
-    }
-  }, [setConfig]);
+export interface CheckersMove {
+  from: number;
+  to: number;
+  captured?: number[];
+}
 
-  useEffect(() => {
-    aiService.updateConfig(config.ai);
-    ttsService.updateConfig(config.tts);
-    
-    if (config.twitch.enabled && !twitchService.isConnected()) {
-      twitchService.connect(async (message) => {
-        addChatMessage({
-          id: Date.now().toString(),
-          username: message.username,
-          message: message.message,
-          timestamp: message.timestamp,
-          color: message.color,
-        });
+export interface ReversiMove {
+  row: number;
+  col: number;
+  player: 'black' | 'white';
+}
 
-        // Process message with AI
-        try {
-          const response = await aiService.generateResponse([
-            { role: 'system', content: config.ai.systemPrompt },
-            { role: 'user', content: `${message.username} says: ${message.message}` },
-          ]);
+// VTuber Animation Types
+export type EmoteType = 
+  | 'wave'
+  | 'celebrate'
+  | 'think'
+  | 'sad'
+  | 'angry'
+  | 'dance'
+  | 'heart'
+  | 'surprised'
+  | 'bow'
+  | 'thumbsup';
 
-          addChatMessage({
-            id: (Date.now() + 1).toString(),
-            username: config.vtuber.name || 'VTuber',
-            message: response,
-            timestamp: Date.now(),
-            isAI: true,
-            color: '#9333ea',
-          });
+export type DanceType = 
+  | 'idle'
+  | 'victory'
+  | 'casual'
+  | 'energetic';
 
-          // Speak response
-          await ttsService.speak(response);
+export interface VTuberExpression {
+  preset: string;
+  duration?: number;
+}
 
-          // Random emote
-          const emotes = ['wave', 'celebrate', 'think', 'heart'];
-          const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
-          setAnimation({
-            type: 'emote',
-            name: randomEmote,
-            duration: 2000,
-          });
+export interface VTuberAnimation {
+  type: 'emote' | 'dance' | 'expression';
+  name: string;
+  duration: number;
+  blendDuration?: number;
+}
 
-        } catch (error) {
-          console.error('Error processing message:', error);
-        }
-      });
-    }
+// AI Provider Types
+export type AIProvider = 'groq' | 'openrouter' | 'mistral' | 'perplexity';
 
-    return () => {
-      if (twitchService.isConnected()) {
-        twitchService.disconnect();
-      }
-    };
-  }, [config, aiService, ttsService, twitchService, addChatMessage, setAnimation]);
+export interface AIConfig {
+  provider: AIProvider;
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  temperature?: number;
+  maxTokens?: number;
+}
 
-  const gameState = useStore(state => state.gameState);
+export interface AIMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
 
-  // Render modes
-  if (config.appMode === 'collab') {
-    return <CollabMode />;
-  }
+// TTS Types
+export interface TTSConfig {
+  enabled: boolean;
+  voice: string;
+  speed: number;
+  pitch: number;
+  useClone: boolean;
+  cloneVoicePath?: string;
+  multilingualDetection: boolean;
+}
 
-  if (config.appMode === 'gaming') {
-    return <GamingMode />;
-  }
+// STT Types
+export interface STTConfig {
+  enabled: boolean;
+  language: string;
+  continuous: boolean;
+  interimResults: boolean;
+}
 
-  const renderGame = () => {
-    switch (gameState.currentGame) {
-      case 'chess':
-        return <ChessBoard />;
-      case 'checkers':
-        return <CheckersBoard />;
-      case 'reversi':
-        return <ReversiBoard />;
-      default:
-        return (
-          <div className="flex items-center justify-center h-full text-gray-400">
-            <p className="text-xl">Select a game in settings</p>
-          </div>
-        );
-    }
+// Twitch Types
+export interface TwitchConfig {
+  enabled: boolean;
+  channel: string;
+  username: string;
+  token: string;
+}
+
+export interface TwitchMessage {
+  username: string;
+  message: string;
+  color?: string;
+  badges?: any;
+  timestamp: number;
+}
+
+// Game State Types
+export interface GameState {
+  currentGame: GameType;
+  playerColor: 'white' | 'black';
+  aiColor: 'white' | 'black';
+  isPlayerTurn: boolean;
+  winner: 'player' | 'ai' | 'draw' | null;
+  moveHistory: any[];
+}
+
+// App Configuration
+export interface AppConfig {
+  ai: AIConfig;
+  tts: TTSConfig;
+  stt: STTConfig;
+  twitch: TwitchConfig;
+  vtuber: {
+    name: string;
+    modelPath: string;
+    scale: number;
+    position: [number, number, number];
   };
+  appMode: AppMode;
+  screenCapture: {
+    enabled: boolean;
+    source: 'window' | 'screen' | null;
+  };
+  overlay: {
+    showMessages: boolean;
+    messageDuration: number; // milliseconds
+    showCommands: boolean;
+  };
+}
 
-  return (
-    <main className="h-screen w-screen overflow-hidden bg-black">
-      <div className="grid grid-cols-12 h-full">
-        {/* VTuber Scene - Left Side */}
-        <div className="col-span-5 relative">
-          <VTuberScene />
-          
-          {/* Controls Overlay */}
-          <div className="absolute top-4 right-4 flex gap-2">
-            <button
-              onClick={() => setConfig({ appMode: 'collab' })}
-              className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors"
-              title="Collab Mode"
-            >
-              <Mic size={24} color="white" />
-            </button>
-            <button
-              onClick={() => setConfig({ appMode: 'gaming' })}
-              className="p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors"
-              title="Gaming Mode"
-            >
-              <Video size={24} color="white" />
-            </button>
-            <button
-              onClick={() => setChatOpen(!chatOpen)}
-              className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors"
-            >
-              <MessageCircle size={24} color="white" />
-            </button>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors"
-            >
-              <Settings size={24} color="white" />
-            </button>
-          </div>
+// Chat Types
+export interface ChatMessage {
+  id: string;
+  username: string;
+  message: string;
+  timestamp: number;
+  isAI?: boolean;
+  color?: string;
+}
 
-          {/* VTuber Info */}
-          <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg p-4">
-            <h1 className="text-2xl font-bold text-white">
-              🎮 {config.vtuber.name || 'AI VTuber'}
-            </h1>
-            <p className="text-gray-300">
-              {gameState.currentGame === 'chess' && '♟️ Playing Chess'}
-              {gameState.currentGame === 'checkers' && '⚫ Playing Checkers'}
-              {gameState.currentGame === 'reversi' && '⚪ Playing Reversi'}
-              {!gameState.currentGame && '💤 Waiting'}
-            </p>
-          </div>
-        </div>
-
-        {/* Game Board - Center */}
-        <div className="col-span-4 bg-gray-900 p-4">
-          {renderGame()}
-        </div>
-
-        {/* Chat Panel - Right Side */}
-        <div className={`col-span-3 transition-all ${chatOpen ? '' : 'hidden'}`}>
-          <ChatPanel />
-        </div>
-      </div>
-
-      {/* Settings Modal */}
-      <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
-    </main>
-  );
+// Store State
+export interface AppStore {
+  config: AppConfig;
+  gameState: GameState;
+  chatMessages: ChatMessage[];
+  currentAnimation: VTuberAnimation | null;
+  isProcessing: boolean;
+  vtuberPosition: [number, number, number];
+  vtuberRotation: [number, number, number];
+  
+  setConfig: (config: Partial<AppConfig>) => void;
+  setGameState: (state: Partial<GameState>) => void;
+  addChatMessage: (message: ChatMessage) => void;
+  setAnimation: (animation: VTuberAnimation | null) => void;
+  setProcessing: (processing: boolean) => void;
+  setVTuberPosition: (position: [number, number, number]) => void;
+  setVTuberRotation: (rotation: [number, number, number]) => void;
+  resetGame: () => void;
 }
