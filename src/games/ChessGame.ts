@@ -1,4 +1,4 @@
-import { Chess } from 'chess.js';
+import { Chess, Square } from 'chess.js';
 import type { ChessMove } from '@/types';
 
 export class ChessGame {
@@ -14,7 +14,7 @@ export class ChessGame {
 
   makePlayerMove(from: string, to: string): ChessMove | null {
     try {
-      const move = this.game.move({ from, to, promotion: 'q' });
+      const move = this.game.move({ from: from as Square, to: to as Square, promotion: 'q' });
       
       if (!move) return null;
 
@@ -30,7 +30,7 @@ export class ChessGame {
       this.onMove(chessMove);
       return chessMove;
     } catch (error) {
-      console.error('Movimiento inválido:', error);
+      console.error('Invalid move:', error);
       return null;
     }
   }
@@ -130,6 +130,6 @@ export class ChessGame {
   }
 
   getLegalMoves(square: string): string[] {
-    return this.game.moves({ square, verbose: true }).map(m => m.to);
+    return this.game.moves({ square: square as Square, verbose: true }).map(m => m.to);
   }
 }
