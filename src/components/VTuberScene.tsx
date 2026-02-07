@@ -32,6 +32,29 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         // Rotate model 180 degrees to face camera
         vrm.scene.rotation.y = Math.PI;
 
+        // Set initial neutral pose - arms down
+        const humanoid = vrm.humanoid;
+        if (humanoid) {
+          // Reset arms to natural position
+          const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
+          const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+          const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
+          const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
+          
+          if (leftUpperArm) {
+            leftUpperArm.rotation.set(0, 0, 0.1); // Slight outward angle
+          }
+          if (rightUpperArm) {
+            rightUpperArm.rotation.set(0, 0, -0.1);
+          }
+          if (leftLowerArm) {
+            leftLowerArm.rotation.set(0, 0, 0);
+          }
+          if (rightLowerArm) {
+            rightLowerArm.rotation.set(0, 0, 0);
+          }
+        }
+
         setVrm(vrm);
       },
       (progress) => {
@@ -66,7 +89,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
 
       if (progress >= 1) {
         animationRef.current = null;
-        resetPose(vrm);
+        resetToIdlePose(vrm);
       }
     } else {
       applyIdleAnimation(vrm, state.clock.elapsedTime);
@@ -151,11 +174,39 @@ function applyIdleAnimation(vrm: VRM, time: number) {
   const humanoid = vrm.humanoid;
   if (!humanoid) return;
 
+  // Gentle breathing animation
   const spine = humanoid.getNormalizedBoneNode('spine');
+  const chest = humanoid.getNormalizedBoneNode('chest');
+  
   if (spine) {
-    spine.rotation.x = Math.sin(time * 2) * 0.02;
+    // Subtle spine movement for breathing
+    spine.rotation.x = Math.sin(time * 0.8) * 0.02;
+  }
+  
+  if (chest) {
+    // Chest breathing
+    chest.rotation.x = Math.sin(time * 0.8) * 0.015;
   }
 
+  // Subtle head movement
+  const head = humanoid.getNormalizedBoneNode('head');
+  if (head) {
+    head.rotation.y = Math.sin(time * 0.3) * 0.05;
+    head.rotation.x = Math.sin(time * 0.5) * 0.03;
+  }
+
+  // Keep arms in natural resting position
+  const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
+  const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+  
+  if (leftUpperArm) {
+    leftUpperArm.rotation.z = 0.1 + Math.sin(time * 0.6) * 0.02;
+  }
+  if (rightUpperArm) {
+    rightUpperArm.rotation.z = -0.1 + Math.sin(time * 0.6 + Math.PI) * 0.02;
+  }
+
+  // Occasional blinking
   if (vrm.expressionManager && Math.random() < 0.001) {
     vrm.expressionManager.setValue('blink', 1);
     setTimeout(() => {
@@ -164,15 +215,24 @@ function applyIdleAnimation(vrm: VRM, time: number) {
   }
 }
 
-function resetPose(vrm: VRM) {
+function resetToIdlePose(vrm: VRM) {
   const humanoid = vrm.humanoid;
   if (!humanoid) return;
 
-  humanoid.getNormalizedBoneNode('rightUpperArm')?.rotation.set(0, 0, 0);
-  humanoid.getNormalizedBoneNode('rightLowerArm')?.rotation.set(0, 0, 0);
-  humanoid.getNormalizedBoneNode('leftUpperArm')?.rotation.set(0, 0, 0);
-  humanoid.getNormalizedBoneNode('spine')?.rotation.set(0, 0, 0);
-  humanoid.getNormalizedBoneNode('head')?.rotation.set(0, 0, 0);
+  // Reset to natural idle pose
+  const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
+  const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+  const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
+  const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
+  const spine = humanoid.getNormalizedBoneNode('spine');
+  const head = humanoid.getNormalizedBoneNode('head');
+
+  if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.1);
+  if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.1);
+  if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0);
+  if (rightLowerArm) rightLowerArm.rotation.set(0, 0, 0);
+  if (spine) spine.rotation.set(0, 0, 0);
+  if (head) head.rotation.set(0, 0, 0);
 
   if (vrm.expressionManager) {
     vrm.expressionManager.setValue('happy', 0);
