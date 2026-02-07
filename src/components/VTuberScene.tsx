@@ -5,7 +5,6 @@ import * as THREE from 'three';
 import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useStore } from '@/store/useStore';
-import type { VTuberAnimation, EmoteType } from '@/types';
 
 const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   const [vrm, setVrm] = useState<VRM | null>(null);
@@ -26,10 +25,12 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         const vrm = gltf.userData.vrm as VRM;
         VRMUtils.removeUnnecessaryJoints(gltf.scene);
         
-        // Setup model
         vrm.scene.traverse((obj) => {
           obj.frustumCulled = false;
         });
+
+        // Rotate model 180 degrees to face camera
+        vrm.scene.rotation.y = Math.PI;
 
         setVrm(vrm);
       },
@@ -55,10 +56,8 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   useFrame((state, delta) => {
     if (!vrm) return;
 
-    // Update VRM
     vrm.update(delta);
 
-    // Handle animations
     if (animationRef.current) {
       const elapsed = Date.now() - animationRef.current.startTime;
       const progress = Math.min(elapsed / animationRef.current.duration, 1);
@@ -70,7 +69,6 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         resetPose(vrm);
       }
     } else {
-      // Idle animation
       applyIdleAnimation(vrm, state.clock.elapsedTime);
     }
   });
@@ -130,7 +128,6 @@ function applyAnimation(vrm: VRM, animationType: string, progress: number) {
       break;
   }
 
-  // Update expressions
   if (vrm.expressionManager) {
     switch (animationType) {
       case 'celebrate':
@@ -154,13 +151,11 @@ function applyIdleAnimation(vrm: VRM, time: number) {
   const humanoid = vrm.humanoid;
   if (!humanoid) return;
 
-  // Subtle breathing animation
   const spine = humanoid.getNormalizedBoneNode('spine');
   if (spine) {
     spine.rotation.x = Math.sin(time * 2) * 0.02;
   }
 
-  // Blink occasionally
   if (vrm.expressionManager && Math.random() < 0.001) {
     vrm.expressionManager.setValue('blink', 1);
     setTimeout(() => {
@@ -199,23 +194,23 @@ export const VTuberScene: React.FC = () => {
   return (
     <div className="w-full h-full bg-gradient-to-b from-purple-900 to-blue-900">
       <Canvas
-        camera={{ position: [0, 0, 5], fov: 30 }}
+        camera={{ position: [0, 0, 3], fov: 45 }}
         gl={{ alpha: true, antialias: true }}
       >
         <ambientLight intensity={0.8} />
         <directionalLight position={[1, 1, 1]} intensity={0.6} />
         <directionalLight position={[-1, -1, -1]} intensity={0.3} />
         
-        <group position={vtuberPosition} rotation={vtuberRotation}>
+        <group position={vtuberPosition} rotation={vtuberRotation} scale={config.vtuber.scale}>
           <VRMModel modelPath={config.vtuber.modelPath} />
         </group>
         
         <OrbitControls
           enablePan={false}
           enableZoom={true}
-          minDistance={3}
-          maxDistance={10}
-          target={[0, 0, 0]}
+          minDistance={1}
+          maxDistance={8}
+          target={[0, 0.5, 0]}
         />
       </Canvas>
     </div>
