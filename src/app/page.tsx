@@ -24,6 +24,19 @@ export default function Home() {
   const [ttsService] = useState(() => new TTSService(config.tts));
   const [twitchService] = useState(() => new TwitchService(config.twitch));
 
+  // Load saved config from localStorage on mount
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('vtuber-config');
+    if (savedConfig) {
+      try {
+        const parsed = JSON.parse(savedConfig);
+        setConfig(parsed);
+      } catch (error) {
+        console.error('Error loading saved config:', error);
+      }
+    }
+  }, [setConfig]);
+
   useEffect(() => {
     aiService.updateConfig(config.ai);
     ttsService.updateConfig(config.tts);
@@ -47,7 +60,7 @@ export default function Home() {
 
           addChatMessage({
             id: (Date.now() + 1).toString(),
-            username: 'Miko',
+            username: config.vtuber.name || 'VTuber',
             message: response,
             timestamp: Date.now(),
             isAI: true,
@@ -79,7 +92,7 @@ export default function Home() {
     };
   }, [config, aiService, ttsService, twitchService, addChatMessage, setAnimation]);
 
-  const gameState = useStore(state => state.gameState);
+  const gameState = useStore((state: any) => state.gameState);
 
   // Render modes
   if (config.appMode === 'collab') {
@@ -146,7 +159,9 @@ export default function Home() {
 
           {/* VTuber Info */}
           <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg p-4">
-            <h1 className="text-2xl font-bold text-white">🎮 Miko AI VTuber</h1>
+            <h1 className="text-2xl font-bold text-white">
+              🎮 {config.vtuber.name || 'AI VTuber'}
+            </h1>
             <p className="text-gray-300">
               {gameState.currentGame === 'chess' && '♟️ Playing Chess'}
               {gameState.currentGame === 'checkers' && '⚫ Playing Checkers'}
