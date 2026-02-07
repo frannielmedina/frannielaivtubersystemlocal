@@ -31,57 +31,23 @@ export default function Home() {
       try {
         const parsed = JSON.parse(savedConfig);
         setConfig(parsed);
+        console.log('✅ Configuración cargada:', parsed);
       } catch (error) {
-        console.error('Error loading saved config:', error);
+        console.error('❌ Error loading saved config:', error);
       }
     }
   }, [setConfig]);
 
+  // Update services when config changes
   useEffect(() => {
+    console.log('🔄 Actualizando servicios con config:', config.ai);
     aiService.updateConfig(config.ai);
     ttsService.updateConfig(config.tts);
     
     if (config.twitch.enabled && !twitchService.isConnected()) {
-      twitchService.connect(async (message) => {
-        addChatMessage({
-          id: Date.now().toString(),
-          username: message.username,
-          message: message.message,
-          timestamp: message.timestamp,
-          color: message.color,
-        });
-
-        // Process message with AI
-        try {
-          const response = await aiService.generateResponse([
-            { role: 'system', content: config.ai.systemPrompt },
-            { role: 'user', content: `${message.username} says: ${message.message}` },
-          ]);
-
-          addChatMessage({
-            id: (Date.now() + 1).toString(),
-            username: config.vtuber.name || 'VTuber',
-            message: response,
-            timestamp: Date.now(),
-            isAI: true,
-            color: '#9333ea',
-          });
-
-          // Speak response
-          await ttsService.speak(response);
-
-          // Random emote
-          const emotes = ['wave', 'celebrate', 'think', 'heart'];
-          const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
-          setAnimation({
-            type: 'emote',
-            name: randomEmote,
-            duration: 2000,
-          });
-
-        } catch (error) {
-          console.error('Error processing message:', error);
-        }
+      console.log('🔌 Conectando a Twitch...');
+      twitchService.connect(handleTwitchMessage).catch(err => {
+        console.error('❌ Error conectando a Twitch:', err);
       });
     }
 
@@ -90,7 +56,109 @@ export default function Home() {
         twitchService.disconnect();
       }
     };
-  }, [config, aiService, ttsService, twitchService, addChatMessage, setAnimation]);
+  }, [config]);
+
+  const handleTwitchMessage = async (message: any) => {
+    console.log('💬 Mensaje de Twitch recibido:', message);
+    
+    addChatMessage({
+      id: Date.now().toString(),
+      username: message.username,
+      message: message.message,
+      timestamp: message.timestamp,
+      color: message.color,
+    });
+
+    await processAIResponse(message.username, message.message);
+  };
+
+  const handleDirectMessage = async (messageText: string) => {
+    console.log('💬 Mensaje directo recibido:', messageText);
+    
+    // Add user message
+    addChatMessage({
+      id: Date.now().toString(),
+      username: 'You',
+      message: messageText,
+      timestamp: Date.now(),
+      color: '#60a5fa',
+    });
+
+    await processAIResponse('You', messageText);
+  };
+
+  const processAIResponse = async (username: string, message: string) => {
+    console.log('🤖 Procesando respuesta de IA...');
+    console.log('📝 API Key presente:', !!config.ai.apiKey);
+    console.log('🔧 Provider:', config.ai.provider);
+    console.log('🎯 Model:', config.ai.model);
+
+    if (!config.ai.apiKey) {
+      console.error('❌ No API key configurada');
+      addChatMessage({
+        id: (Date.now() + 1).toString(),
+        username: config.vtuber.name || 'VTuber',
+        message: '❌ Error: API key not configured. Please add your API key in Settings.',
+        timestamp: Date.now(),
+        isAI: true,
+        color: '#ef4444',
+      });
+      return;
+    }
+
+    try {
+      const messages = [
+        { role: 'system' as const, content: config.ai.systemPrompt },
+        { role: 'user' as const, content: `${username} says: ${message}` },
+      ];
+
+      console.log('📤 Enviando a API:', { provider: config.ai.provider, model: config.ai.model });
+      
+      const response = await aiService.generateResponse(messages);
+      
+      console.log('✅ Respuesta recibida:', response);
+
+      addChatMessage({
+        id: (Date.now() + 1).toString(),
+        username: config.vtuber.name || 'VTuber',
+        message: response,
+        timestamp: Date.now(),
+        isAI: true,
+        color: '#9333ea',
+      });
+
+      // Speak response if TTS enabled
+      if (config.tts.enabled) {
+        console.log('🔊 Hablando respuesta...');
+        await ttsService.speak(response);
+      }
+
+      // Random emote
+      const emotes = ['wave', 'celebrate', 'think', 'heart'];
+      const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
+      setAnimation({
+        type: 'emote',
+        name: randomEmote,
+        duration: 2000,
+      });
+
+    } catch (error) {
+      console.error('❌ Error procesando respuesta de IA:', error);
+      
+      let errorMessage = 'Error generating response. ';
+      if (error instanceof Error) {
+        errorMessage += error.message;
+      }
+      
+      addChatMessage({
+        id: (Date.now() + 2).toString(),
+        username: 'System',
+        message: errorMessage,
+        timestamp: Date.now(),
+        color: '#ef4444',
+      });
+    }
+  };
 
   const gameState = useStore((state: any) => state.gameState);
 
@@ -168,6 +236,11 @@ export default function Home() {
               {gameState.currentGame === 'reversi' && '⚪ Playing Reversi'}
               {!gameState.currentGame && '💤 Waiting'}
             </p>
+            {config.ai.apiKey ? (
+              <p className="text-green-400 text-sm mt-1">✅ API Connected</p>
+            ) : (
+              <p className="text-red-400 text-sm mt-1">❌ No API Key</p>
+            )}
           </div>
         </div>
 
@@ -178,7 +251,7 @@ export default function Home() {
 
         {/* Chat Panel - Right Side */}
         <div className={`col-span-3 transition-all ${chatOpen ? '' : 'hidden'}`}>
-          <ChatPanel />
+          <ChatPanel onDirectMessage={handleDirectMessage} />
         </div>
       </div>
 
