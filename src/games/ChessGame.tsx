@@ -1,318 +1,361 @@
 /**
- * ChessGame - Integración de Ajedrez con comandos y TTS (TypeScript)
+ * TTSService - Servicio unificado de Text-to-Speech (TypeScript)
+ * Soporta: ElevenLabs, Coqui TTS (remoto/local), Browser Web Speech API
  */
 
-import React, { useState, useEffect } from 'react';
-import { Chess, Move } from 'chess.js';
-import { GameMessenger } from '../services/GameMessenger';
-import { TTSService } from '../services/TTSService';
-
-interface ChessGameProps {
-  ttsService?: TTSService;
-  chatService?: any;
-  vrmController?: any;
+interface TTSConfig {
+  elevenlabs: { apiKey: string; voiceId: string };
+  coquiRemote: { apiUrl: string; voiceId: string };
+  coquiLocal: { serverUrl: string };
 }
 
-interface ChatMessage {
-  text: string;
-  user?: string;
+interface SavedConfig {
+  provider: string;
+  config: TTSConfig;
 }
 
-export const ChessGame: React.FC<ChessGameProps> = ({ ttsService, chatService, vrmController }) => {
-  const [game, setGame] = useState(new Chess());
-  const [gameMessenger] = useState(() => new GameMessenger(ttsService, chatService));
-  const [showHelp, setShowHelp] = useState(true);
-  const [moveHistory, setMoveHistory] = useState<Move[]>([]);
+interface InitialConfig {
+  provider?: string;
+  enabled?: boolean;
+  volume?: number;
+  elevenlabs?: { apiKey?: string; voiceId?: string };
+  coquiRemote?: { apiUrl?: string; voiceId?: string };
+  coquiLocal?: { serverUrl?: string };
+}
 
-  useEffect(() => {
-    // Configurar VRM controller
-    if (vrmController) {
-      gameMessenger.setVRMController(vrmController);
-    }
+type TTSProvider = 'browser' | 'elevenlabs' | 'coqui-remote' | 'coqui-local';
 
-    // Mensaje de bienvenida
-    gameMessenger.sendGameWelcome(
-      'Ajedrez',
-      'Usa !move [origen] to [destino] para mover. Ejemplo: !move E2 to E4',
-      'Las columnas van de A a H y las filas de 1 a 8.'
-    );
+export class TTSService {
+  provider: TTSProvider;
+  config: TTSConfig;
+  queue: string[];
+  speaking: boolean;
+  enabled: boolean;
+  volume: number;
 
-    // Escuchar comandos del chat
-    const handleChatMessage = (message: ChatMessage) => {
-      if (message.text) {
-        handleChessCommand(message.text);
-      }
+  constructor(initialConfig?: InitialConfig) {
+    this.provider = 'browser';
+    this.config = {
+      elevenlabs: { apiKey: '', voiceId: '' },
+      coquiRemote: { apiUrl: '', voiceId: '' },
+      coquiLocal: { serverUrl: 'http://localhost:5002' }
     };
-
-    chatService?.on('message', handleChatMessage);
-
-    return () => {
-      chatService?.off('message', handleChatMessage);
-    };
-  }, [chatService, gameMessenger, vrmController]);
-
-  /**
-   * Manejar comandos de chat
-   */
-  const handleChessCommand = (message: string): void => {
-    const text = message.toLowerCase().trim();
-
-    // Comando !move
-    const movePattern = /!move\s+([a-h][1-8])\s+to\s+([a-h][1-8])/i;
-    const moveMatch = text.match(movePattern);
+    this.queue = [];
+    this.speaking = false;
+    this.enabled = true;
+    this.volume = 1.0;
     
-    if (moveMatch) {
-      const [_, from, to] = moveMatch;
-      makeMove(from.toLowerCase(), to.toLowerCase());
-      return;
+    // Aplicar configuración inicial si se proporciona
+    if (initialConfig) {
+      this.applyInitialConfig(initialConfig);
     }
-
-    // Comando !reset
-    if (text === '!reset') {
-      resetGame();
-      return;
+    
+    // Cargar configuración guardada (puede sobrescribir la inicial)
+    this.loadConfig();
+  }
+  
+  private applyInitialConfig(initialConfig: InitialConfig): void {
+    if (initialConfig.provider) {
+      this.provider = initialConfig.provider as TTSProvider;
     }
-
-    // Comando !hint
-    if (text === '!hint') {
-      showHint();
-      return;
+    if (typeof initialConfig.enabled === 'boolean') {
+      this.enabled = initialConfig.enabled;
     }
-
-    // Comando !undo
-    if (text === '!undo') {
-      undoMove();
-      return;
+    if (typeof initialConfig.volume === 'number') {
+      this.volume = initialConfig.volume;
     }
-
-    // Comando !moves
-    if (text === '!moves') {
-      showPossibleMoves();
-      return;
+    if (initialConfig.elevenlabs) {
+      this.config.elevenlabs = {
+        apiKey: initialConfig.elevenlabs.apiKey || '',
+        voiceId: initialConfig.elevenlabs.voiceId || ''
+      };
     }
-
-    // Comando !help
-    if (text === '!help' || text === '!comandos') {
-      showCommands();
-      return;
+    if (initialConfig.coquiRemote) {
+      this.config.coquiRemote = {
+        apiUrl: initialConfig.coquiRemote.apiUrl || '',
+        voiceId: initialConfig.coquiRemote.voiceId || ''
+      };
     }
-  };
-
-  /**
-   * Realizar movimiento
-   */
-  const makeMove = (from: string, to: string): void => {
+    if (initialConfig.coquiLocal) {
+      this.config.coquiLocal = {
+        serverUrl: initialConfig.coquiLocal.serverUrl || 'http://localhost:5002'
+      };
+    }
+  }
+  
+  loadConfig(): void {
     try {
-      const move = game.move({
-        from: from,
-        to: to,
-        promotion: 'q' // Siempre promocionar a reina
-      });
-
-      if (move) {
-        // Movimiento exitoso
-        setGame(new Chess(game.fen()));
-        setMoveHistory([...moveHistory, move]);
-
-        // Determinar tipo de movimiento
-        let details = '';
-        let animation = 'CLAP';
-
-        if (move.captured) {
-          details = `Capturaste ${getPieceName(move.captured)}`;
-          animation = 'CELEBRATE';
-          gameMessenger.sendCapture(getPieceName(move.piece), to.toUpperCase());
-        } else {
-          details = `${getPieceName(move.piece)} de ${from.toUpperCase()} a ${to.toUpperCase()}`;
-        }
-
-        gameMessenger.sendMoveSuccess('Movimiento exitoso', details, animation);
-
-        // Verificar estado del juego
-        checkGameState();
+      const saved = localStorage.getItem('tts-config');
+      if (saved) {
+        const parsed: SavedConfig = JSON.parse(saved);
+        this.provider = parsed.provider as TTSProvider || 'browser';
+        this.config = { ...this.config, ...parsed.config };
+        console.log('🔊 TTS config loaded:', this.provider);
       }
     } catch (error) {
-      // Movimiento inválido
-      gameMessenger.sendMoveInvalid(
-        `No puedes mover de ${from.toUpperCase()} a ${to.toUpperCase()}`,
-        'Intenta con otra posición válida.'
-      );
+      console.error('Error loading TTS config:', error);
     }
-  };
-
-  /**
-   * Verificar estado del juego
-   */
-  const checkGameState = (): void => {
-    if (game.isCheckmate()) {
-      const winner = game.turn() === 'w' ? 'Negras' : 'Blancas';
-      gameMessenger.sendCheckmate(winner);
-    } else if (game.isCheck()) {
-      const player = game.turn() === 'w' ? 'Rey Blanco' : 'Rey Negro';
-      gameMessenger.sendCheck(player);
-    } else if (game.isDraw()) {
-      gameMessenger.sendDraw('¡La partida terminó en empate!');
-    } else if (game.isStalemate()) {
-      gameMessenger.sendDraw('¡Tablas por ahogado!');
-    } else if (game.isThreefoldRepetition()) {
-      gameMessenger.sendDraw('¡Tablas por repetición triple!');
-    } else if (game.isInsufficientMaterial()) {
-      gameMessenger.sendDraw('¡Tablas por material insuficiente!');
-    } else {
-      // Cambio de turno normal
-      const player = game.turn() === 'w' ? 'Blancas' : 'Negras';
-      gameMessenger.sendTurnChange(player);
+  }
+  
+  saveConfig(): void {
+    try {
+      const toSave: SavedConfig = {
+        provider: this.provider,
+        config: this.config
+      };
+      localStorage.setItem('tts-config', JSON.stringify(toSave));
+      console.log('💾 TTS config saved');
+    } catch (error) {
+      console.error('Error saving TTS config:', error);
     }
-  };
-
-  /**
-   * Resetear juego
-   */
-  const resetGame = (): void => {
-    setGame(new Chess());
-    setMoveHistory([]);
-    gameMessenger.sendGameMessage('Juego reiniciado. ¡Buena suerte!', {
-      animation: 'HAPPY'
-    });
-  };
-
-  /**
-   * Deshacer movimiento
-   */
-  const undoMove = (): void => {
-    const move = game.undo();
-    if (move) {
-      setGame(new Chess(game.fen()));
-      setMoveHistory(moveHistory.slice(0, -1));
-      gameMessenger.sendGameMessage('Movimiento deshecho', {
-        animation: 'THINK'
-      });
-    } else {
-      gameMessenger.sendGameMessage('No hay movimientos para deshacer', {
-        animation: 'SHAKE'
-      });
-    }
-  };
-
-  /**
-   * Mostrar pista
-   */
-  const showHint = (): void => {
-    const moves = game.moves({ verbose: true });
-    if (moves.length === 0) return;
-
-    // Seleccionar movimiento aleatorio
-    const randomMove = moves[Math.floor(Math.random() * moves.length)];
-    const hint = `Intenta mover de ${randomMove.from.toUpperCase()} a ${randomMove.to.toUpperCase()}`;
+  }
+  
+  updateConfig(newConfig: Partial<SavedConfig>): void {
+    this.provider = (newConfig.provider as TTSProvider) || this.provider;
+    this.config = { ...this.config, ...newConfig.config };
+    this.saveConfig();
+    console.log('🔄 TTS config updated:', this.provider);
+  }
+  
+  setVolume(volume: number): void {
+    this.volume = Math.max(0, Math.min(1, volume));
+  }
+  
+  async speak(text: string, priority: boolean = false): Promise<void> {
+    if (!this.enabled || !text || text.trim() === '') return;
     
-    gameMessenger.sendGameMessage(hint, {
-      animation: 'THINK'
-    });
-  };
-
-  /**
-   * Mostrar movimientos posibles
-   */
-  const showPossibleMoves = (): void => {
-    const moves = game.moves({ verbose: true });
-    const count = moves.length;
+    // Limpiar texto de tags de animación
+    const cleanText = this._cleanText(text);
     
-    gameMessenger.sendGameMessage(
-      `Hay ${count} movimientos posibles en esta posición`,
-      { animation: 'THINK' }
+    if (priority) {
+      // Detener audio actual y hablar inmediatamente
+      this.stop();
+      await this._speak(cleanText);
+    } else {
+      // Añadir a cola
+      this.queue.push(cleanText);
+      this._processQueue();
+    }
+  }
+  
+  private _cleanText(text: string): string {
+    // Remover tags de animación [ANIMATION]
+    let clean = text.replace(/\[.*?\]/g, '');
+    return clean.trim();
+  }
+  
+  private async _speak(text: string): Promise<void> {
+    if (this.speaking) return;
+    this.speaking = true;
+    
+    try {
+      switch (this.provider) {
+        case 'elevenlabs':
+          await this._speakElevenLabs(text);
+          break;
+        case 'coqui-remote':
+          await this._speakCoquiRemote(text);
+          break;
+        case 'coqui-local':
+          await this._speakCoquiLocal(text);
+          break;
+        default:
+          await this._speakBrowser(text);
+      }
+    } catch (error) {
+      console.error('TTS Error:', error);
+      // Fallback a browser TTS
+      try {
+        await this._speakBrowser(text);
+      } catch (fallbackError) {
+        console.error('Fallback TTS also failed:', fallbackError);
+      }
+    } finally {
+      this.speaking = false;
+    }
+  }
+  
+  private async _speakElevenLabs(text: string): Promise<void> {
+    const { apiKey, voiceId } = this.config.elevenlabs || {};
+    
+    if (!apiKey || !voiceId) {
+      throw new Error('ElevenLabs no configurado correctamente');
+    }
+    
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'audio/mpeg',
+          'Content-Type': 'application/json',
+          'xi-api-key': apiKey
+        },
+        body: JSON.stringify({
+          text: text,
+          model_id: 'eleven_monolingual_v1',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.5
+          }
+        })
+      }
     );
-  };
-
-  /**
-   * Mostrar comandos
-   */
-  const showCommands = (): void => {
-    const commands = [
-      '!move [origen] to [destino] - Mover pieza',
-      '!hint - Obtener pista',
-      '!undo - Deshacer movimiento',
-      '!moves - Ver cantidad de movimientos',
-      '!reset - Reiniciar partida'
-    ].join(', ');
     
-    gameMessenger.sendHelp(commands);
-  };
-
-  /**
-   * Obtener nombre de pieza en español
-   */
-  const getPieceName = (piece: string): string => {
-    const pieces: Record<string, string> = {
-      'p': 'Peón',
-      'n': 'Caballo',
-      'b': 'Alfil',
-      'r': 'Torre',
-      'q': 'Reina',
-      'k': 'Rey'
+    if (!response.ok) {
+      throw new Error(`ElevenLabs API error: ${response.status}`);
+    }
+    
+    const audioBlob = await response.blob();
+    return this._playAudioBlob(audioBlob);
+  }
+  
+  private async _speakCoquiRemote(text: string): Promise<void> {
+    const { apiUrl } = this.config.coquiRemote || {};
+    
+    if (!apiUrl) {
+      throw new Error('Coqui Remote no configurado correctamente');
+    }
+    
+    const response = await fetch(`${apiUrl}/api/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Coqui Remote API error: ${response.status}`);
+    }
+    
+    const audioBlob = await response.blob();
+    return this._playAudioBlob(audioBlob);
+  }
+  
+  private async _speakCoquiLocal(text: string): Promise<void> {
+    const { serverUrl } = this.config.coquiLocal || {};
+    const url = serverUrl || 'http://localhost:5002';
+    
+    const response = await fetch(`${url}/api/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Coqui Local API error: ${response.status}`);
+    }
+    
+    const audioBlob = await response.blob();
+    return this._playAudioBlob(audioBlob);
+  }
+  
+  private _playAudioBlob(blob: Blob): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const audioUrl = URL.createObjectURL(blob);
+      const audio = new Audio(audioUrl);
+      audio.volume = this.volume;
+      
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        resolve();
+      };
+      
+      audio.onerror = (error) => {
+        URL.revokeObjectURL(audioUrl);
+        reject(error);
+      };
+      
+      audio.play().catch(reject);
+    });
+  }
+  
+  private async _speakBrowser(text: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!window.speechSynthesis) {
+        reject(new Error('Browser no soporta Web Speech API'));
+        return;
+      }
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'es-ES'; // Español
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = this.volume;
+      
+      utterance.onend = () => resolve();
+      utterance.onerror = (event) => reject(event);
+      
+      speechSynthesis.speak(utterance);
+    });
+  }
+  
+  private async _processQueue(): Promise<void> {
+    if (this.speaking || this.queue.length === 0) return;
+    
+    const text = this.queue.shift();
+    if (text) {
+      await this._speak(text);
+    }
+    
+    // Procesar siguiente en cola con pequeña pausa
+    if (this.queue.length > 0) {
+      setTimeout(() => this._processQueue(), 300);
+    }
+  }
+  
+  stop(): void {
+    // Detener Web Speech API
+    if (window.speechSynthesis) {
+      speechSynthesis.cancel();
+    }
+    
+    // Limpiar cola
+    this.queue = [];
+    this.speaking = false;
+  }
+  
+  toggle(): boolean {
+    this.enabled = !this.enabled;
+    if (!this.enabled) {
+      this.stop();
+    }
+    console.log('🔊 TTS', this.enabled ? 'habilitado' : 'deshabilitado');
+    return this.enabled;
+  }
+  
+  clearQueue(): void {
+    this.queue = [];
+  }
+  
+  getQueueLength(): number {
+    return this.queue.length;
+  }
+  
+  isEnabled(): boolean {
+    return this.enabled;
+  }
+  
+  isSpeaking(): boolean {
+    return this.speaking;
+  }
+  
+  getProvider(): TTSProvider {
+    return this.provider;
+  }
+  
+  // Test de audio
+  async test(): Promise<void> {
+    const testMessages: Record<TTSProvider, string> = {
+      'browser': '¡Hola! Soy el sistema de voz del navegador.',
+      'elevenlabs': 'Probando ElevenLabs Text to Speech.',
+      'coqui-remote': 'Probando Coqui TTS remoto.',
+      'coqui-local': 'Probando Coqui TTS local.'
     };
-    return pieces[piece.toLowerCase()] || piece;
-  };
-
-  return (
-    <div className="chess-game">
-      {/* Panel de ayuda */}
-      {showHelp && (
-        <div className="help-panel">
-          <button className="close-btn" onClick={() => setShowHelp(false)}>✕</button>
-          <h3>📋 Comandos de Ajedrez</h3>
-          <div className="command-list">
-            <div className="command">
-              <code>!move [origen] to [destino]</code>
-              <span>Mover pieza. Ejemplo: <code>!move E2 to E4</code></span>
-            </div>
-            <div className="command">
-              <code>!hint</code>
-              <span>Obtener una pista de movimiento</span>
-            </div>
-            <div className="command">
-              <code>!undo</code>
-              <span>Deshacer último movimiento</span>
-            </div>
-            <div className="command">
-              <code>!moves</code>
-              <span>Ver cantidad de movimientos posibles</span>
-            </div>
-            <div className="command">
-              <code>!reset</code>
-              <span>Reiniciar la partida</span>
-            </div>
-          </div>
-          <div className="notation-guide">
-            <h4>📍 Notación del tablero</h4>
-            <p>Columnas: <strong>A - H</strong> (izquierda a derecha)</p>
-            <p>Filas: <strong>1 - 8</strong> (abajo a arriba)</p>
-            <p>Ejemplo: E4 = columna E, fila 4</p>
-          </div>
-        </div>
-      )}
-
-      {/* Tablero de ajedrez */}
-      <div className="chess-board">
-        {/* Implementa tu tablero aquí */}
-      </div>
-
-      {/* Historial de movimientos */}
-      <div className="move-history">
-        <h4>Historial</h4>
-        {moveHistory.map((move, index) => (
-          <div key={index} className="move-item">
-            {index + 1}. {move.san}
-          </div>
-        ))}
-      </div>
-
-      {/* Botón para mostrar ayuda */}
-      <button className="help-toggle" onClick={() => setShowHelp(!showHelp)}>
-        {showHelp ? 'Ocultar' : 'Mostrar'} Comandos
-      </button>
-    </div>
-  );
-};
+    
+    const message = testMessages[this.provider] || testMessages['browser'];
+    await this.speak(message, true);
+  }
+}
 
 // Export default también para compatibilidad
-export default ChessGame;
+export default TTSService;
