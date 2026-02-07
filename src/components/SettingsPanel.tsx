@@ -1,358 +1,223 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
+import * as THREE from 'three';
+import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useStore } from '@/store/useStore';
-import type { AIProvider, GameType } from '@/types';
-import { X, Save, Play, StopCircle } from 'lucide-react';
+import type { VTuberAnimation, EmoteType } from '@/types';
 
-interface SettingsPanelProps {
-  isOpen: boolean;
-  onClose: () => void;
+const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
+  const [vrm, setVrm] = useState<VRM | null>(null);
+  const currentAnimation = useStore(state => state.currentAnimation);
+  const animationRef = useRef<{
+    type: string;
+    startTime: number;
+    duration: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const loader = new GLTFLoader();
+    loader.register((parser) => new VRMLoaderPlugin(parser));
+
+    loader.load(
+      modelPath,
+      (gltf) => {
+        const vrm = gltf.userData.vrm as VRM;
+        VRMUtils.removeUnnecessaryJoints(gltf.scene);
+        
+        // Setup model
+        vrm.scene.traverse((obj) => {
+          obj.frustumCulled = false;
+        });
+
+        setVrm(vrm);
+      },
+      (progress) => {
+        console.log('Loading model:', (progress.loaded / progress.total) * 100, '%');
+      },
+      (error) => {
+        console.error('Error loading VRM:', error);
+      }
+    );
+  }, [modelPath]);
+
+  useEffect(() => {
+    if (currentAnimation && vrm) {
+      animationRef.current = {
+        type: currentAnimation.name,
+        startTime: Date.now(),
+        duration: currentAnimation.duration,
+      };
+    }
+  }, [currentAnimation, vrm]);
+
+  useFrame((state, delta) => {
+    if (!vrm) return;
+
+    // Update VRM
+    vrm.update(delta);
+
+    // Handle animations
+    if (animationRef.current) {
+      const elapsed = Date.now() - animationRef.current.startTime;
+      const progress = Math.min(elapsed / animationRef.current.duration, 1);
+
+      applyAnimation(vrm, animationRef.current.type, progress);
+
+      if (progress >= 1) {
+        animationRef.current = null;
+        resetPose(vrm);
+      }
+    } else {
+      // Idle animation
+      applyIdleAnimation(vrm, state.clock.elapsedTime);
+    }
+  });
+
+  if (!vrm) return null;
+
+  return <primitive object={vrm.scene} />;
+};
+
+function applyAnimation(vrm: VRM, animationType: string, progress: number) {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) return;
+
+  const t = easeInOutCubic(progress);
+
+  switch (animationType) {
+    case 'wave':
+      const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+      const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
+      if (rightUpperArm && rightLowerArm) {
+        rightUpperArm.rotation.z = Math.sin(progress * Math.PI * 4) * 0.8 - 0.5;
+        rightLowerArm.rotation.z = Math.sin(progress * Math.PI * 4) * 0.3;
+      }
+      break;
+
+    case 'celebrate':
+      const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
+      const rightUpperArmC = humanoid.getNormalizedBoneNode('rightUpperArm');
+      if (leftUpperArm && rightUpperArmC) {
+        leftUpperArm.rotation.z = Math.sin(progress * Math.PI * 2) * 0.5 + 0.5;
+        rightUpperArmC.rotation.z = Math.sin(progress * Math.PI * 2) * 0.5 - 0.5;
+      }
+      break;
+
+    case 'bow':
+      const spine = humanoid.getNormalizedBoneNode('spine');
+      if (spine) {
+        spine.rotation.x = Math.sin(t * Math.PI) * 0.5;
+      }
+      break;
+
+    case 'dance':
+      const hips = humanoid.getNormalizedBoneNode('hips');
+      if (hips) {
+        hips.position.y = Math.sin(progress * Math.PI * 8) * 0.1;
+        hips.rotation.y = Math.sin(progress * Math.PI * 4) * 0.2;
+      }
+      break;
+
+    case 'think':
+      const head = humanoid.getNormalizedBoneNode('head');
+      const rightHand = humanoid.getNormalizedBoneNode('rightHand');
+      if (head && rightHand) {
+        head.rotation.x = t * 0.2;
+        rightHand.position.z = t * 0.3;
+      }
+      break;
+  }
+
+  // Update expressions
+  if (vrm.expressionManager) {
+    switch (animationType) {
+      case 'celebrate':
+      case 'wave':
+        vrm.expressionManager.setValue('happy', t);
+        break;
+      case 'sad':
+        vrm.expressionManager.setValue('sad', t);
+        break;
+      case 'angry':
+        vrm.expressionManager.setValue('angry', t);
+        break;
+      case 'surprised':
+        vrm.expressionManager.setValue('surprised', t);
+        break;
+    }
+  }
 }
 
-export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose }) => {
-  const { config, setConfig, gameState, setGameState } = useStore();
-  const [localConfig, setLocalConfig] = useState(config);
+function applyIdleAnimation(vrm: VRM, time: number) {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) return;
 
-  const handleSave = () => {
-    setConfig(localConfig);
-    onClose();
-  };
+  // Subtle breathing animation
+  const spine = humanoid.getNormalizedBoneNode('spine');
+  if (spine) {
+    spine.rotation.x = Math.sin(time * 2) * 0.02;
+  }
 
-  const handleGameChange = (game: GameType) => {
-    setGameState({ currentGame: game, winner: null, moveHistory: [] });
-  };
+  // Blink occasionally
+  if (vrm.expressionManager && Math.random() < 0.001) {
+    vrm.expressionManager.setValue('blink', 1);
+    setTimeout(() => {
+      vrm.expressionManager?.setValue('blink', 0);
+    }, 100);
+  }
+}
 
-  if (!isOpen) return null;
+function resetPose(vrm: VRM) {
+  const humanoid = vrm.humanoid;
+  if (!humanoid) return;
+
+  humanoid.getNormalizedBoneNode('rightUpperArm')?.rotation.set(0, 0, 0);
+  humanoid.getNormalizedBoneNode('rightLowerArm')?.rotation.set(0, 0, 0);
+  humanoid.getNormalizedBoneNode('leftUpperArm')?.rotation.set(0, 0, 0);
+  humanoid.getNormalizedBoneNode('spine')?.rotation.set(0, 0, 0);
+  humanoid.getNormalizedBoneNode('head')?.rotation.set(0, 0, 0);
+
+  if (vrm.expressionManager) {
+    vrm.expressionManager.setValue('happy', 0);
+    vrm.expressionManager.setValue('sad', 0);
+    vrm.expressionManager.setValue('angry', 0);
+    vrm.expressionManager.setValue('surprised', 0);
+  }
+}
+
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+export const VTuberScene: React.FC = () => {
+  const config = useStore(state => state.config);
+  const vtuberPosition = useStore(state => state.vtuberPosition);
+  const vtuberRotation = useStore(state => state.vtuberRotation);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-      <div className="bg-gray-900 rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-white">⚙️ Configuración</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X size={24} />
-          </button>
-        </div>
-
-        {/* Game Selection */}
-        <section className="mb-6">
-          <h3 className="text-lg font-semibold text-white mb-3">🎮 Juego Activo</h3>
-          <div className="grid grid-cols-3 gap-3">
-            {(['chess', 'checkers', 'reversi'] as GameType[]).map((game) => (
-              <button
-                key={game || 'none'}
-                onClick={() => handleGameChange(game)}
-                className={`p-4 rounded-lg font-semibold transition-all ${
-                  gameState.currentGame === game
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                {game === 'chess' && '♟️ Ajedrez'}
-                {game === 'checkers' && '⚫ Damas'}
-                {game === 'reversi' && '⚪ Reversi'}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* AI Configuration */}
-        <section className="mb-6">
-          <h3 className="text-lg font-semibold text-white mb-3">🤖 Configuración de IA</h3>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Proveedor de IA
-              </label>
-              <select
-                value={localConfig.ai.provider}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  ai: { ...localConfig.ai, provider: e.target.value as AIProvider }
-                })}
-                className="w-full p-2 bg-gray-800 text-white rounded border border-gray-700 focus:border-purple-500 outline-none"
-              >
-                <option value="groq">Groq</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="mistral">Mistral AI</option>
-                <option value="perplexity">Perplexity</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                API Key
-              </label>
-              <input
-                type="password"
-                value={localConfig.ai.apiKey}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  ai: { ...localConfig.ai, apiKey: e.target.value }
-                })}
-                placeholder="Ingresa tu API key"
-                className="w-full p-2 bg-gray-800 text-white rounded border border-gray-700 focus:border-purple-500 outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Modelo
-              </label>
-              <input
-                type="text"
-                value={localConfig.ai.model}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  ai: { ...localConfig.ai, model: e.target.value }
-                })}
-                placeholder="Ej: llama-3.1-70b-versatile"
-                className="w-full p-2 bg-gray-800 text-white rounded border border-gray-700 focus:border-purple-500 outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                System Prompt
-              </label>
-              <textarea
-                value={localConfig.ai.systemPrompt}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  ai: { ...localConfig.ai, systemPrompt: e.target.value }
-                })}
-                rows={4}
-                className="w-full p-2 bg-gray-800 text-white rounded border border-gray-700 focus:border-purple-500 outline-none resize-none"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* TTS Configuration */}
-        <section className="mb-6">
-          <h3 className="text-lg font-semibold text-white mb-3">🔊 TTS Configuration</h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-300">
-                Enable TTS
-              </label>
-              <input
-                type="checkbox"
-                checked={localConfig.tts.enabled}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  tts: { ...localConfig.tts, enabled: e.target.checked }
-                })}
-                className="w-5 h-5"
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-300">
-                Use Voice Clone (Coqui TTS)
-              </label>
-              <input
-                type="checkbox"
-                checked={localConfig.tts.useClone}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  tts: { ...localConfig.tts, useClone: e.target.checked }
-                })}
-                className="w-5 h-5"
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-300">
-                Multilingual Auto-Detection
-              </label>
-              <input
-                type="checkbox"
-                checked={localConfig.tts.multilingualDetection}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  tts: { ...localConfig.tts, multilingualDetection: e.target.checked }
-                })}
-                className="w-5 h-5"
-              />
-            </div>
-
-            {localConfig.tts.useClone && (
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Voice File Path
-                </label>
-                <input
-                  type="text"
-                  value={localConfig.tts.cloneVoicePath || ''}
-                  onChange={(e) => setLocalConfig({
-                    ...localConfig,
-                    tts: { ...localConfig.tts, cloneVoicePath: e.target.value }
-                  })}
-                  placeholder="/path/to/voice.wav"
-                  className="w-full p-2 bg-gray-800 text-white rounded border border-gray-700 focus:border-purple-500 outline-none"
-                />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Speed: {localConfig.tts.speed.toFixed(1)}x
-              </label>
-              <input
-                type="range"
-                min="0.5"
-                max="2"
-                step="0.1"
-                value={localConfig.tts.speed}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  tts: { ...localConfig.tts, speed: parseFloat(e.target.value) }
-                })}
-                className="w-full"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* STT Configuration */}
-        <section className="mb-6">
-          <h3 className="text-lg font-semibold text-white mb-3">🎤 STT Configuration (Speech-to-Text)</h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-300">
-                Enable STT
-              </label>
-              <input
-                type="checkbox"
-                checked={localConfig.stt.enabled}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  stt: { ...localConfig.stt, enabled: e.target.checked }
-                })}
-                className="w-5 h-5"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Language
-              </label>
-              <select
-                value={localConfig.stt.language}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  stt: { ...localConfig.stt, language: e.target.value }
-                })}
-                className="w-full p-2 bg-gray-800 text-white rounded border border-gray-700 focus:border-purple-500 outline-none"
-              >
-                <option value="en-US">English (US)</option>
-                <option value="es-ES">Spanish (Spain)</option>
-                <option value="es-MX">Spanish (Mexico)</option>
-                <option value="fr-FR">French</option>
-                <option value="de-DE">German</option>
-                <option value="it-IT">Italian</option>
-                <option value="pt-BR">Portuguese (Brazil)</option>
-                <option value="ja-JP">Japanese</option>
-                <option value="ko-KR">Korean</option>
-                <option value="zh-CN">Chinese (Mandarin)</option>
-              </select>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-300">
-                Continuous Recognition
-              </label>
-              <input
-                type="checkbox"
-                checked={localConfig.stt.continuous}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  stt: { ...localConfig.stt, continuous: e.target.checked }
-                })}
-                className="w-5 h-5"
-              />
-            </div>
-
-            <p className="text-xs text-gray-500">
-              💡 STT is used in Collab Mode for voice interaction
-            </p>
-          </div>
-        </section>
-
-        {/* Twitch Configuration */}
-        <section className="mb-6">
-          <h3 className="text-lg font-semibold text-white mb-3">💬 Configuración de Twitch</h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-gray-300">
-                Habilitar Twitch
-              </label>
-              <input
-                type="checkbox"
-                checked={localConfig.twitch.enabled}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  twitch: { ...localConfig.twitch, enabled: e.target.checked }
-                })}
-                className="w-5 h-5"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Canal
-              </label>
-              <input
-                type="text"
-                value={localConfig.twitch.channel}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  twitch: { ...localConfig.twitch, channel: e.target.value }
-                })}
-                placeholder="tu_canal"
-                className="w-full p-2 bg-gray-800 text-white rounded border border-gray-700 focus:border-purple-500 outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Token OAuth
-              </label>
-              <input
-                type="password"
-                value={localConfig.twitch.token}
-                onChange={(e) => setLocalConfig({
-                  ...localConfig,
-                  twitch: { ...localConfig.twitch, token: e.target.value }
-                })}
-                placeholder="oauth:..."
-                className="w-full p-2 bg-gray-800 text-white rounded border border-gray-700 focus:border-purple-500 outline-none"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Save Button */}
-        <div className="flex justify-end gap-3 mt-6">
-          <button
-            onClick={onClose}
-            className="px-6 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-6 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors flex items-center gap-2"
-          >
-            <Save size={20} />
-            Guardar
-          </button>
-        </div>
-      </div>
+    <div className="w-full h-full bg-gradient-to-b from-purple-900 to-blue-900">
+      <Canvas
+        camera={{ position: [0, 0, 5], fov: 30 }}
+        gl={{ alpha: true, antialias: true }}
+      >
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[1, 1, 1]} intensity={0.6} />
+        <directionalLight position={[-1, -1, -1]} intensity={0.3} />
+        
+        <group position={vtuberPosition} rotation={vtuberRotation}>
+          <VRMModel modelPath={config.vtuber.modelPath} />
+        </group>
+        
+        <OrbitControls
+          enablePan={false}
+          enableZoom={true}
+          minDistance={3}
+          maxDistance={10}
+          target={[0, 0, 0]}
+        />
+      </Canvas>
     </div>
   );
 };
