@@ -5,7 +5,7 @@ const defaultConfig: AppConfig = {
   ai: {
     provider: 'groq',
     apiKey: '',
-    model: 'llama-3.1-70b-versatile',
+    model: 'llama-3.3-70b-versatile',
     systemPrompt: `You are a friendly and enthusiastic AI VTuber. You love playing chess, checkers, and Reversi with your followers. You are competitive but always kind. You can speak multiple languages naturally. When you win, you celebrate with joy. When you lose, you are a good sport. You always encourage your followers to keep playing.`,
     temperature: 0.8,
     maxTokens: 200,
