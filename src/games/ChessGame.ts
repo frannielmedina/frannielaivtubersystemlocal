@@ -3,10 +3,10 @@
  * Envuelve chess.js y añade funcionalidad de IA
  */
 
-import { Chess, Move, Square } from 'chess.js';
+import { Chess } from 'chess.js';
+import type { Move, Square, PieceSymbol } from 'chess.js';
 
 type Color = 'white' | 'black';
-type PieceSymbol = 'p' | 'n' | 'b' | 'r' | 'q' | 'k';
 
 interface MoveResult {
   isCheck: boolean;
@@ -77,7 +77,7 @@ export class ChessGame {
           isCheck: this.chess.isCheck(),
           isCheckmate: this.chess.isCheckmate(),
           isDraw: this.chess.isDraw(),
-          captured: move.captured as PieceSymbol,
+          captured: move.captured as PieceSymbol | undefined,
           from: move.from,
           to: move.to
         };
@@ -108,7 +108,7 @@ export class ChessGame {
           isCheck: this.chess.isCheck(),
           isCheckmate: this.chess.isCheckmate(),
           isDraw: this.chess.isDraw(),
-          captured: result.captured as PieceSymbol,
+          captured: result.captured as PieceSymbol | undefined,
           from: result.from,
           to: result.to
         });
@@ -148,7 +148,7 @@ export class ChessGame {
   private evaluateBoard(): number {
     let score = 0;
     const board = this.chess.board();
-    const pieceValues: Record<PieceSymbol, number> = {
+    const pieceValues: Record<string, number> = {
       'p': 1,
       'n': 3,
       'b': 3,
@@ -161,7 +161,7 @@ export class ChessGame {
       for (let j = 0; j < 8; j++) {
         const piece = board[i][j];
         if (piece) {
-          const value = pieceValues[piece.type as PieceSymbol] || 0;
+          const value = pieceValues[piece.type] || 0;
           
           if (piece.color === (this.aiColor === 'white' ? 'w' : 'b')) {
             score += value;
