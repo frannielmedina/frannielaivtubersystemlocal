@@ -1,6 +1,7 @@
 /**
  * TTSService - Servicio unificado de Text-to-Speech (TypeScript)
  * Soporta: ElevenLabs, Coqui TTS (remoto/local), Browser Web Speech API
+ * Compatible con SSR (Next.js)
  */
 
 interface TTSConfig {
@@ -32,8 +33,12 @@ export class TTSService {
   speaking: boolean;
   enabled: boolean;
   volume: number;
+  private isBrowser: boolean;
 
   constructor(initialConfig?: InitialConfig) {
+    // Detectar si estamos en el navegador
+    this.isBrowser = typeof window !== 'undefined';
+    
     this.provider = 'browser';
     this.config = {
       elevenlabs: { apiKey: '', voiceId: '' },
@@ -50,8 +55,10 @@ export class TTSService {
       this.applyInitialConfig(initialConfig);
     }
     
-    // Cargar configuración guardada (puede sobrescribir la inicial)
-    this.loadConfig();
+    // Cargar configuración guardada solo en el navegador
+    if (this.isBrowser) {
+      this.loadConfig();
+    }
   }
   
   private applyInitialConfig(initialConfig: InitialConfig): void {
@@ -84,6 +91,8 @@ export class TTSService {
   }
   
   loadConfig(): void {
+    if (!this.isBrowser) return;
+    
     try {
       const saved = localStorage.getItem('tts-config');
       if (saved) {
@@ -98,6 +107,8 @@ export class TTSService {
   }
   
   saveConfig(): void {
+    if (!this.isBrowser) return;
+    
     try {
       const toSave: SavedConfig = {
         provider: this.provider,
@@ -122,7 +133,7 @@ export class TTSService {
   }
   
   async speak(text: string, priority: boolean = false): Promise<void> {
-    if (!this.enabled || !text || text.trim() === '') return;
+    if (!this.isBrowser || !this.enabled || !text || text.trim() === '') return;
     
     // Limpiar texto de tags de animación
     const cleanText = this._cleanText(text);
@@ -145,7 +156,7 @@ export class TTSService {
   }
   
   private async _speak(text: string): Promise<void> {
-    if (this.speaking) return;
+    if (!this.isBrowser || this.speaking) return;
     this.speaking = true;
     
     try {
@@ -270,6 +281,8 @@ export class TTSService {
   }
   
   private async _speakBrowser(text: string): Promise<void> {
+    if (!this.isBrowser) return Promise.resolve();
+    
     return new Promise((resolve, reject) => {
       if (!window.speechSynthesis) {
         reject(new Error('Browser no soporta Web Speech API'));
@@ -304,6 +317,8 @@ export class TTSService {
   }
   
   stop(): void {
+    if (!this.isBrowser) return;
+    
     // Detener Web Speech API
     if (window.speechSynthesis) {
       speechSynthesis.cancel();
@@ -345,6 +360,8 @@ export class TTSService {
   
   // Test de audio
   async test(): Promise<void> {
+    if (!this.isBrowser) return;
+    
     const testMessages: Record<TTSProvider, string> = {
       'browser': '¡Hola! Soy el sistema de voz del navegador.',
       'elevenlabs': 'Probando ElevenLabs Text to Speech.',
