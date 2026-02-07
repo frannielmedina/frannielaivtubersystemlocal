@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useStore } from '@/store/useStore';
 import { Send } from 'lucide-react';
+import type { ChatMessage } from '@/types';
 
 export const ChatPanel: React.FC = () => {
   const { chatMessages, config } = useStore();
@@ -16,19 +17,19 @@ export const ChatPanel: React.FC = () => {
       <div className="p-4 bg-purple-900 border-b border-purple-700">
         <h2 className="text-xl font-bold text-white">💬 Chat</h2>
         <p className="text-sm text-gray-300">
-          {config.twitch.enabled ? `🟢 Conectado a ${config.twitch.channel}` : '🔴 Desconectado'}
+          {config.twitch.enabled ? `🟢 Connected to ${config.twitch.channel}` : '🔴 Disconnected'}
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {chatMessages.length === 0 && (
           <div className="text-center text-gray-500 mt-8">
-            <p>No hay mensajes aún</p>
-            <p className="text-sm mt-2">Los mensajes de Twitch aparecerán aquí</p>
+            <p>No messages yet</p>
+            <p className="text-sm mt-2">Twitch messages will appear here</p>
           </div>
         )}
 
-        {chatMessages.map((msg) => (
+        {chatMessages.map((msg: ChatMessage) => (
           <div
             key={msg.id}
             className={`p-3 rounded-lg ${
@@ -56,7 +57,7 @@ export const ChatPanel: React.FC = () => {
         <div className="flex gap-2">
           <input
             type="text"
-            placeholder="Los mensajes vienen de Twitch..."
+            placeholder="Messages come from Twitch..."
             disabled
             className="flex-1 px-4 py-2 bg-gray-700 text-gray-400 rounded border border-gray-600 outline-none"
           />
@@ -68,7 +69,7 @@ export const ChatPanel: React.FC = () => {
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          💡 Los mensajes que empiezan con ! o contienen @ son ignorados
+          💡 Messages starting with ! or containing @ are ignored
         </p>
       </div>
     </div>
