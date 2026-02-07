@@ -44,16 +44,23 @@ export default function Home() {
     aiService.updateConfig(config.ai);
     ttsService.updateConfig(config.tts);
     
-    // Only connect to Twitch if enabled AND channel is set
-    if (config.twitch.enabled && config.twitch.channel && config.twitch.channel.trim() !== '') {
+    // Only attempt Twitch connection if enabled AND channel is properly set
+    const shouldConnect = config.twitch.enabled && 
+                         config.twitch.channel && 
+                         config.twitch.channel.trim() !== '';
+    
+    if (shouldConnect) {
+      // Update Twitch config first
+      twitchService.updateConfig(config.twitch);
+      
       if (!twitchService.isConnected()) {
-        console.log('🔌 Conectando a Twitch...');
+        console.log('🔌 Conectando a Twitch con canal:', config.twitch.channel);
         twitchService.connect(handleTwitchMessage).catch(err => {
           console.error('❌ Error conectando a Twitch:', err);
           addChatMessage({
             id: Date.now().toString(),
             username: 'System',
-            message: `Failed to connect to Twitch: ${err.message}. Check your settings.`,
+            message: `Failed to connect to Twitch: ${err.message}. Check your channel name in settings.`,
             timestamp: Date.now(),
             color: '#ef4444',
           });
