@@ -2,7 +2,6 @@
   "name": "miko-ai-vtuber-advanced",
   "version": "2.0.0",
   "description": "Advanced AI VTuber with interactive games, TTS, and Twitch integration",
-  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
