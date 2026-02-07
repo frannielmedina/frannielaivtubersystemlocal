@@ -12,6 +12,7 @@ const defaultConfig: AppConfig = {
   },
   tts: {
     enabled: true,
+    provider: 'webspeech',
     voice: 'es-ES-Standard-A',
     speed: 1.0,
     pitch: 1.0,
