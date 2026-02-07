@@ -1,135 +1,301 @@
-import { Chess, Square } from 'chess.js';
-import type { ChessMove } from '@/types';
+/**
+ * ChessGame - Integración de Ajedrez con comandos y TTS
+ */
 
-export class ChessGame {
-  private game: Chess;
-  private onMove: (move: ChessMove) => void;
-  private aiColor: 'w' | 'b';
+import React, { useState, useEffect } from 'react';
+import { Chess } from 'chess.js'; // Asume que usas chess.js
+import GameMessenger from './GameMessenger';
 
-  constructor(aiColor: 'white' | 'black', onMove: (move: ChessMove) => void) {
-    this.game = new Chess();
-    this.aiColor = aiColor === 'white' ? 'w' : 'b';
-    this.onMove = onMove;
-  }
+const ChessGame = ({ ttsService, chatService, vrmController }) => {
+  const [game, setGame] = useState(new Chess());
+  const [gameMessenger] = useState(new GameMessenger(ttsService, chatService));
+  const [showHelp, setShowHelp] = useState(true);
+  const [moveHistory, setMoveHistory] = useState([]);
 
-  makePlayerMove(from: string, to: string): ChessMove | null {
-    try {
-      const move = this.game.move({ from: from as Square, to: to as Square, promotion: 'q' });
-      
-      if (!move) return null;
+  useEffect(() => {
+    // Configurar VRM controller
+    gameMessenger.setVRMController(vrmController);
 
-      const chessMove: ChessMove = {
-        from: move.from,
-        to: move.to,
-        piece: move.piece,
-        captured: move.captured,
-        isCheck: this.game.isCheck(),
-        isCheckmate: this.game.isCheckmate(),
-      };
+    // Mensaje de bienvenida
+    gameMessenger.sendGameWelcome(
+      'Ajedrez',
+      'Usa !move [origen] to [destino] para mover. Ejemplo: !move E2 to E4',
+      'Las columnas van de A a H y las filas de 1 a 8.'
+    );
 
-      this.onMove(chessMove);
-      return chessMove;
-    } catch (error) {
-      console.error('Invalid move:', error);
-      return null;
-    }
-  }
-
-  async makeAIMove(): Promise<ChessMove | null> {
-    if (this.game.isGameOver()) return null;
-
-    // Simple AI: choose random legal move with some basic strategy
-    const possibleMoves = this.game.moves({ verbose: true });
-    
-    if (possibleMoves.length === 0) return null;
-
-    // Prioritize captures and checks
-    const captureMoves = possibleMoves.filter(m => m.captured);
-    const checkMoves = possibleMoves.filter(m => {
-      this.game.move(m);
-      const isCheck = this.game.isCheck();
-      this.game.undo();
-      return isCheck;
-    });
-
-    let selectedMove;
-    
-    if (checkMoves.length > 0 && Math.random() > 0.3) {
-      selectedMove = checkMoves[Math.floor(Math.random() * checkMoves.length)];
-    } else if (captureMoves.length > 0 && Math.random() > 0.5) {
-      selectedMove = captureMoves[Math.floor(Math.random() * captureMoves.length)];
-    } else {
-      selectedMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
-    }
-
-    const move = this.game.move(selectedMove);
-
-    const chessMove: ChessMove = {
-      from: move.from,
-      to: move.to,
-      piece: move.piece,
-      captured: move.captured,
-      isCheck: this.game.isCheck(),
-      isCheckmate: this.game.isCheckmate(),
+    // Escuchar comandos del chat
+    const handleChatMessage = (message) => {
+      handleChessCommand(message);
     };
 
-    // Simulate thinking time
-    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
+    chatService?.on('message', handleChatMessage);
 
-    this.onMove(chessMove);
-    return chessMove;
-  }
+    return () => {
+      chatService?.off('message', handleChatMessage);
+    };
+  }, []);
 
-  getPGN(): string {
-    return this.game.pgn();
-  }
+  /**
+   * Manejar comandos de chat
+   */
+  const handleChessCommand = (message) => {
+    const text = message.toLowerCase().trim();
 
-  getFEN(): string {
-    return this.game.fen();
-  }
-
-  isGameOver(): boolean {
-    return this.game.isGameOver();
-  }
-
-  isCheck(): boolean {
-    return this.game.isCheck();
-  }
-
-  isCheckmate(): boolean {
-    return this.game.isCheckmate();
-  }
-
-  isDraw(): boolean {
-    return this.game.isDraw();
-  }
-
-  getWinner(): 'white' | 'black' | 'draw' | null {
-    if (!this.isGameOver()) return null;
-    if (this.isDraw()) return 'draw';
+    // Comando !move
+    const movePattern = /!move\s+([a-h][1-8])\s+to\s+([a-h][1-8])/i;
+    const moveMatch = text.match(movePattern);
     
-    // The side to move when game is over lost
-    return this.game.turn() === 'w' ? 'black' : 'white';
-  }
+    if (moveMatch) {
+      const [_, from, to] = moveMatch;
+      makeMove(from.toLowerCase(), to.toLowerCase());
+      return;
+    }
 
-  turn(): 'w' | 'b' {
-    return this.game.turn();
-  }
+    // Comando !reset
+    if (text === '!reset') {
+      resetGame();
+      return;
+    }
 
-  reset(): void {
-    this.game.reset();
-  }
+    // Comando !hint
+    if (text === '!hint') {
+      showHint();
+      return;
+    }
 
-  getBoard(): string[][] {
-    const board = this.game.board();
-    return board.map(row => 
-      row.map(square => 
-        square ? `${square.color}${square.type}` : ''
-      )
+    // Comando !undo
+    if (text === '!undo') {
+      undoMove();
+      return;
+    }
+
+    // Comando !moves
+    if (text === '!moves') {
+      showPossibleMoves();
+      return;
+    }
+
+    // Comando !help
+    if (text === '!help' || text === '!comandos') {
+      showCommands();
+      return;
+    }
+  };
+
+  /**
+   * Realizar movimiento
+   */
+  const makeMove = (from, to) => {
+    try {
+      const move = game.move({
+        from: from,
+        to: to,
+        promotion: 'q' // Siempre promocionar a reina
+      });
+
+      if (move) {
+        // Movimiento exitoso
+        setGame(new Chess(game.fen()));
+        setMoveHistory([...moveHistory, move]);
+
+        // Determinar tipo de movimiento
+        let details = '';
+        let animation = 'CLAP';
+
+        if (move.captured) {
+          details = `Capturaste ${getPieceName(move.captured)}`;
+          animation = 'CELEBRATE';
+          gameMessenger.sendCapture(getPieceName(move.piece), to.toUpperCase());
+        } else {
+          details = `${getPieceName(move.piece)} de ${from.toUpperCase()} a ${to.toUpperCase()}`;
+        }
+
+        gameMessenger.sendMoveSuccess(`Movimiento exitoso`, details, animation);
+
+        // Verificar estado del juego
+        checkGameState();
+      }
+    } catch (error) {
+      // Movimiento inválido
+      gameMessenger.sendMoveInvalid(
+        `No puedes mover de ${from.toUpperCase()} a ${to.toUpperCase()}`,
+        'Intenta con otra posición válida.'
+      );
+    }
+  };
+
+  /**
+   * Verificar estado del juego
+   */
+  const checkGameState = () => {
+    if (game.isCheckmate()) {
+      const winner = game.turn() === 'w' ? 'Negras' : 'Blancas';
+      gameMessenger.sendCheckmate(winner);
+    } else if (game.isCheck()) {
+      const player = game.turn() === 'w' ? 'Rey Blanco' : 'Rey Negro';
+      gameMessenger.sendCheck(player);
+    } else if (game.isDraw()) {
+      gameMessenger.sendDraw('¡La partida terminó en empate!');
+    } else if (game.isStalemate()) {
+      gameMessenger.sendDraw('¡Tablas por ahogado!');
+    } else if (game.isThreefoldRepetition()) {
+      gameMessenger.sendDraw('¡Tablas por repetición triple!');
+    } else if (game.isInsufficientMaterial()) {
+      gameMessenger.sendDraw('¡Tablas por material insuficiente!');
+    } else {
+      // Cambio de turno normal
+      const player = game.turn() === 'w' ? 'Blancas' : 'Negras';
+      gameMessenger.sendTurnChange(player);
+    }
+  };
+
+  /**
+   * Resetear juego
+   */
+  const resetGame = () => {
+    setGame(new Chess());
+    setMoveHistory([]);
+    gameMessenger.sendGameMessage('Juego reiniciado. ¡Buena suerte!', {
+      animation: 'HAPPY'
+    });
+  };
+
+  /**
+   * Deshacer movimiento
+   */
+  const undoMove = () => {
+    const move = game.undo();
+    if (move) {
+      setGame(new Chess(game.fen()));
+      setMoveHistory(moveHistory.slice(0, -1));
+      gameMessenger.sendGameMessage('Movimiento deshecho', {
+        animation: 'THINK'
+      });
+    } else {
+      gameMessenger.sendGameMessage('No hay movimientos para deshacer', {
+        animation: 'SHAKE'
+      });
+    }
+  };
+
+  /**
+   * Mostrar pista
+   */
+  const showHint = () => {
+    const moves = game.moves({ verbose: true });
+    if (moves.length === 0) return;
+
+    // Seleccionar movimiento aleatorio
+    const randomMove = moves[Math.floor(Math.random() * moves.length)];
+    const hint = `Intenta mover de ${randomMove.from.toUpperCase()} a ${randomMove.to.toUpperCase()}`;
+    
+    gameMessenger.sendGameMessage(hint, {
+      animation: 'THINK'
+    });
+  };
+
+  /**
+   * Mostrar movimientos posibles
+   */
+  const showPossibleMoves = () => {
+    const moves = game.moves({ verbose: true });
+    const count = moves.length;
+    
+    gameMessenger.sendGameMessage(
+      `Hay ${count} movimientos posibles en esta posición`,
+      { animation: 'THINK' }
     );
-  }
+  };
 
-  getLegalMoves(square: string): string[] {
-    return this.game.moves({ square: square as Square, verbose: true }).map(m => m.to);
-  }
-}
+  /**
+   * Mostrar comandos
+   */
+  const showCommands = () => {
+    const commands = [
+      '!move [origen] to [destino] - Mover pieza',
+      '!hint - Obtener pista',
+      '!undo - Deshacer movimiento',
+      '!moves - Ver cantidad de movimientos',
+      '!reset - Reiniciar partida'
+    ].join(', ');
+    
+    gameMessenger.sendHelp(commands);
+  };
+
+  /**
+   * Obtener nombre de pieza en español
+   */
+  const getPieceName = (piece) => {
+    const pieces = {
+      'p': 'Peón',
+      'n': 'Caballo',
+      'b': 'Alfil',
+      'r': 'Torre',
+      'q': 'Reina',
+      'k': 'Rey'
+    };
+    return pieces[piece.toLowerCase()] || piece;
+  };
+
+  return (
+    <div className="chess-game">
+      {/* Panel de ayuda */}
+      {showHelp && (
+        <div className="help-panel">
+          <button className="close-btn" onClick={() => setShowHelp(false)}>✕</button>
+          <h3>📋 Comandos de Ajedrez</h3>
+          <div className="command-list">
+            <div className="command">
+              <code>!move [origen] to [destino]</code>
+              <span>Mover pieza. Ejemplo: <code>!move E2 to E4</code></span>
+            </div>
+            <div className="command">
+              <code>!hint</code>
+              <span>Obtener una pista de movimiento</span>
+            </div>
+            <div className="command">
+              <code>!undo</code>
+              <span>Deshacer último movimiento</span>
+            </div>
+            <div className="command">
+              <code>!moves</code>
+              <span>Ver cantidad de movimientos posibles</span>
+            </div>
+            <div className="command">
+              <code>!reset</code>
+              <span>Reiniciar la partida</span>
+            </div>
+          </div>
+          <div className="notation-guide">
+            <h4>📍 Notación del tablero</h4>
+            <p>Columnas: <strong>A - H</strong> (izquierda a derecha)</p>
+            <p>Filas: <strong>1 - 8</strong> (abajo a arriba)</p>
+            <p>Ejemplo: E4 = columna E, fila 4</p>
+          </div>
+        </div>
+      )}
+
+      {/* Tablero de ajedrez */}
+      <div className="chess-board">
+        {/* Implementa tu tablero aquí */}
+      </div>
+
+      {/* Historial de movimientos */}
+      <div className="move-history">
+        <h4>Historial</h4>
+        {moveHistory.map((move, index) => (
+          <div key={index} className="move-item">
+            {index + 1}. {move.san}
+          </div>
+        ))}
+      </div>
+
+      {/* Botón para mostrar ayuda */}
+      <button className="help-toggle" onClick={() => setShowHelp(!showHelp)}>
+        {showHelp ? 'Ocultar' : 'Mostrar'} Comandos
+      </button>
+    </div>
+  );
+};
+
+export default ChessGame;
