@@ -414,14 +414,38 @@ export const VTuberScene: React.FC = () => {
 
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [hintVisible, setHintVisible] = useState(true);
+  const [hintTimeout, setHintTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  // Auto-hide hint after 5 seconds
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setHintVisible(false);
+    }, 5000);
+
+    return () => clearTimeout(timeout);
+  }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY });
+    
+    // Show hint on interaction
+    setHintVisible(true);
+    if (hintTimeout) clearTimeout(hintTimeout);
+    const timeout = setTimeout(() => setHintVisible(false), 3000);
+    setHintTimeout(timeout);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
+    if (!isDragging) {
+      // Show hint on mouse move
+      setHintVisible(true);
+      if (hintTimeout) clearTimeout(hintTimeout);
+      const timeout = setTimeout(() => setHintVisible(false), 3000);
+      setHintTimeout(timeout);
+      return;
+    }
 
     const deltaX = (e.clientX - dragStart.x) * 0.003;
     const deltaY = -(e.clientY - dragStart.y) * 0.003;
@@ -451,6 +475,12 @@ export const VTuberScene: React.FC = () => {
         scale: newScale
       }
     });
+    
+    // Show hint on wheel
+    setHintVisible(true);
+    if (hintTimeout) clearTimeout(hintTimeout);
+    const timeout = setTimeout(() => setHintVisible(false), 3000);
+    setHintTimeout(timeout);
   };
 
   return (
@@ -490,9 +520,13 @@ export const VTuberScene: React.FC = () => {
         />
       </Canvas>
 
-      {/* Hint text */}
-      <div className="absolute bottom-4 right-4 bg-black bg-opacity-60 px-3 py-2 rounded text-white text-xs pointer-events-none">
-        🖱️ Arrastrar: Click + Move | 🔍 Zoom: Rueda del mouse
+      {/* Hint text - Auto-hide and reappear on mouse move */}
+      <div 
+        className={`absolute bottom-4 right-4 bg-black bg-opacity-60 px-3 py-2 rounded text-white text-xs pointer-events-none transition-opacity duration-500 ${
+          hintVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        🖱️ Drag: Click + Move | 🔍 Zoom: Mouse Wheel
       </div>
     </div>
   );
