@@ -2,49 +2,54 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { CheckersGame } from '@/games/CheckersGame';
-import { RefreshCw, Info } from 'lucide-react';
+import { RefreshCw, HelpCircle, Info } from 'lucide-react';
 
 export const CheckersBoard: React.FC = () => {
   const { gameState, setGameState, setAnimation, addChatMessage, chatMessages } = useStore();
   const [game, setGame] = useState<CheckersGame | null>(null);
-  const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
-  const [legalMoves, setLegalMoves] = useState<number[]>([]);
+  const [selectedSquare, setSelectedSquare] = useState<[number, number] | null>(null);
+  const [legalMoves, setLegalMoves] = useState<[number, number][]>([]);
+  const [showHint, setShowHint] = useState(false);
   const [showCommands, setShowCommands] = useState(true);
   const [autoRestartTimer, setAutoRestartTimer] = useState<number | null>(null);
 
   useEffect(() => {
-    const newGame = new CheckersGame(gameState.aiColor === 'white' ? 'red' : 'black', async (move) => {
-      let message = '';
-      
-      if (move.captured && move.captured.length > 0) {
-        message = move.captured.length > 1 
-          ? `Multi-jump! I captured ${move.captured.length} pieces! 🎯`
-          : 'Got one of your pieces! 😈';
-        setAnimation({ type: 'emote', name: 'celebrate', duration: 2000 });
-      }
-
-      const winner = newGame.getWinner();
-      if (winner) {
-        if (winner === 'ai') {
-          message = 'I win! Great game though! 🎉';
-          setAnimation({ type: 'dance', name: 'victory', duration: 3000 });
-        } else {
-          message = 'You won! Well played! 👏';
-          setAnimation({ type: 'emote', name: 'sad', duration: 2000 });
+    const newGame = new CheckersGame(gameState.aiColor, async (move) => {
+      setTimeout(() => {
+        if (newGame.isGameOver()) {
+          const winner = newGame.getWinner();
+          let message = '';
+          
+          if (winner === 'red') {
+            message = gameState.aiColor === 'red' ? 'I win! 🎉' : 'You won! 👏';
+            setAnimation({ 
+              type: 'emote', 
+              name: gameState.aiColor === 'red' ? 'heart' : 'sad', 
+              duration: 3000 
+            });
+          } else if (winner === 'black') {
+            message = gameState.aiColor === 'black' ? 'I win! 🎉' : 'You won! 👏';
+            setAnimation({ 
+              type: 'emote', 
+              name: gameState.aiColor === 'black' ? 'heart' : 'sad', 
+              duration: 3000 
+            });
+          } else if (winner === 'draw') {
+            message = 'It\'s a draw! 🤝';
+            setAnimation({ type: 'emote', name: 'surprised', duration: 2000 });
+          }
+          
+          setGameState({ winner });
+          addChatMessage({
+            id: Date.now().toString(),
+            username: 'Miko',
+            message,
+            timestamp: Date.now(),
+            isAI: true,
+            color: '#9333ea'
+          });
         }
-        setGameState({ winner });
-      }
-
-      if (message) {
-        addChatMessage({ 
-          id: Date.now().toString(), 
-          username: 'Miko', 
-          message, 
-          timestamp: Date.now(), 
-          isAI: true, 
-          color: '#9333ea' 
-        });
-      }
+      }, 100);
     });
     setGame(newGame);
   }, []);
@@ -83,36 +88,25 @@ export const CheckersBoard: React.FC = () => {
     
     const message = lastMessage.message.trim().toLowerCase();
     
-    // Checkers command: !move A3 to B4 or !move 1 to 10
-    const movePattern = /^!move\s+([a-h][1-8]|[0-9]+)\s+to\s+([a-h][1-8]|[0-9]+)$/i;
+    // Checkers command: !move A3 to B4
+    const movePattern = /^!move\s+([a-h][1-8])\s+to\s+([a-h][1-8])$/i;
     const match = message.match(movePattern);
     
     if (match) {
-      const [_, fromStr, toStr] = match;
-      handleCommandMove(fromStr, toStr);
+      const [_, from, to] = match;
+      handleCommandMove(from, to);
     }
   }, [chatMessages, game]);
 
-  const handleCommandMove = (fromStr: string, toStr: string) => {
+  const handleCommandMove = (fromNotation: string, toNotation: string) => {
     if (!game) return;
     
-    // Convert to index
-    let fromIndex: number;
-    let toIndex: number;
+    const from = chessNotationToRowCol(fromNotation);
+    const to = chessNotationToRowCol(toNotation);
     
-    // Check if it's chess notation (A1) or numeric index
-    if (/^[a-h][1-8]$/i.test(fromStr)) {
-      fromIndex = chessNotationToIndex(fromStr);
-      toIndex = chessNotationToIndex(toStr);
-    } else {
-      fromIndex = parseInt(fromStr);
-      toIndex = parseInt(toStr);
-    }
+    const aiPlayer = gameState.aiColor === 'red' ? 'red' : 'black';
     
-    const currentPlayer = game.getCurrentPlayer();
-    const aiPlayer = gameState.aiColor === 'white' ? 1 : -1;
-    
-    if (currentPlayer === aiPlayer) {
+    if (game.getCurrentPlayer() === aiPlayer) {
       addChatMessage({
         id: Date.now().toString(),
         username: 'System',
@@ -123,63 +117,45 @@ export const CheckersBoard: React.FC = () => {
       return;
     }
     
-    const move = game.makeMove(fromIndex, toIndex);
+    const move = game.makeMove(from.row, from.col, to.row, to.col);
     
     if (move) {
       addChatMessage({
         id: Date.now().toString(),
         username: 'System',
-        message: `✅ Moved piece from ${indexToChessNotation(fromIndex)} to ${indexToChessNotation(toIndex)}`,
+        message: `✅ Moved ${fromNotation.toUpperCase()} to ${toNotation.toUpperCase()}${move.isJump ? ' (jump!)' : ''}`,
         timestamp: Date.now(),
         color: '#10b981'
       });
-      setSelectedPiece(null);
+      setSelectedSquare(null);
       setLegalMoves([]);
     } else {
       addChatMessage({
         id: Date.now().toString(),
         username: 'System',
-        message: `❌ Invalid move from ${indexToChessNotation(fromIndex)} to ${indexToChessNotation(toIndex)}`,
+        message: `❌ Invalid move: ${fromNotation.toUpperCase()} to ${toNotation.toUpperCase()}`,
         timestamp: Date.now(),
         color: '#ef4444'
       });
     }
   };
 
-  const chessNotationToIndex = (notation: string): number => {
+  const chessNotationToRowCol = (notation: string): { row: number; col: number } => {
     const col = notation.charCodeAt(0) - 'a'.charCodeAt(0);
     const row = 8 - parseInt(notation[1]);
-    return row * 8 + col;
+    return { row, col };
   };
 
-  const indexToChessNotation = (index: number): string => {
-    const row = Math.floor(index / 8);
-    const col = index % 8;
+  const rowColToChessNotation = (row: number, col: number): string => {
     return String.fromCharCode('A'.charCodeAt(0) + col) + (8 - row);
   };
 
-  useEffect(() => {
-    if (!game || game.isGameOver()) return;
-    
-    const currentPlayer = game.getCurrentPlayer();
-    const aiPlayer = gameState.aiColor === 'white' ? 1 : -1;
-    
-    if (currentPlayer === aiPlayer) {
-      setTimeout(() => game.makeAIMove(), 800);
-    }
-  }, [game, gameState]);
-
-  const handleSquareClick = (index: number) => {
+  const handleSquareClick = (row: number, col: number) => {
     if (!game || game.isGameOver()) return;
 
-    const board = game.getBoard();
-    const [row, col] = indexToPos(index);
-    const piece = board[row][col];
+    const aiPlayer = gameState.aiColor === 'red' ? 'red' : 'black';
     
-    const currentPlayer = game.getCurrentPlayer();
-    const aiPlayer = gameState.aiColor === 'white' ? 1 : -1;
-    
-    if (currentPlayer === aiPlayer) {
+    if (game.getCurrentPlayer() === aiPlayer) {
       addChatMessage({
         id: Date.now().toString(),
         username: 'Miko',
@@ -191,51 +167,77 @@ export const CheckersBoard: React.FC = () => {
       return;
     }
 
-    if (selectedPiece !== null) {
-      const move = game.makeMove(selectedPiece, index);
+    if (selectedSquare) {
+      const [fromRow, fromCol] = selectedSquare;
+      const move = game.makeMove(fromRow, fromCol, row, col);
       
       if (move) {
-        setSelectedPiece(null);
+        setSelectedSquare(null);
         setLegalMoves([]);
-      } else if (piece && Math.sign(piece) === currentPlayer) {
-        // Select new piece if clicked on own piece
-        setSelectedPiece(index);
-        setLegalMoves(game.getLegalMoves(index).map(m => m.to));
       } else {
-        setSelectedPiece(null);
-        setLegalMoves([]);
+        const piece = game.getPieceAt(row, col);
+        if (piece && piece.color === game.getCurrentPlayer()) {
+          setSelectedSquare([row, col]);
+          setLegalMoves(game.getLegalMoves(row, col));
+        } else {
+          setSelectedSquare(null);
+          setLegalMoves([]);
+        }
       }
-    } else if (piece && Math.sign(piece) === currentPlayer) {
-      setSelectedPiece(index);
-      setLegalMoves(game.getLegalMoves(index).map(m => m.to));
+    } else {
+      const piece = game.getPieceAt(row, col);
+      if (piece && piece.color === game.getCurrentPlayer()) {
+        setSelectedSquare([row, col]);
+        setLegalMoves(game.getLegalMoves(row, col));
+      }
     }
   };
 
   const handleReset = () => {
-    // Clear auto-restart timer if exists
     if (autoRestartTimer) {
       clearTimeout(autoRestartTimer);
       setAutoRestartTimer(null);
     }
 
     game?.reset();
-    setSelectedPiece(null);
+    setSelectedSquare(null);
     setLegalMoves([]);
     setGameState({ winner: null, moveHistory: [] });
+    setShowHint(false);
     
     addChatMessage({
       id: Date.now().toString(),
       username: 'Miko',
-      message: 'New game! Let\'s do this! 🎮',
+      message: 'New checkers game! Good luck! 🎮',
       timestamp: Date.now(),
       isAI: true,
       color: '#9333ea'
     });
   };
 
+  const handleHint = () => {
+    if (!game) return;
+    const hint = game.getHint();
+    if (hint) {
+      const fromNotation = rowColToChessNotation(hint.from[0], hint.from[1]);
+      const toNotation = rowColToChessNotation(hint.to[0], hint.to[1]);
+      addChatMessage({
+        id: Date.now().toString(),
+        username: 'Miko',
+        message: `💡 Hint: Move ${fromNotation} to ${toNotation}`,
+        timestamp: Date.now(),
+        isAI: true,
+        color: '#3b82f6'
+      });
+      setShowHint(true);
+      setTimeout(() => setShowHint(false), 3000);
+    }
+  };
+
   if (!game) return <div className="text-white">Loading...</div>;
 
   const board = game.getBoard();
+  const hint = showHint ? game.getHint() : null;
 
   return (
     <div className="flex flex-col items-center justify-center h-full p-4 overflow-y-auto">
@@ -248,6 +250,13 @@ export const CheckersBoard: React.FC = () => {
             className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
           >
             <Info size={16} /> {showCommands ? 'Hide' : 'Show'} Commands
+          </button>
+          <button 
+            onClick={handleHint} 
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
+            disabled={game.isGameOver()}
+          >
+            <HelpCircle size={16} /> Hint
           </button>
           <button 
             onClick={handleReset} 
@@ -274,9 +283,13 @@ export const CheckersBoard: React.FC = () => {
               <br />
               • Rows: 1-8 (bottom to top)
               <br />
-              • Only dark squares are playable
+              • Can only move diagonally on dark squares
               <br />
-              • Example: !move C3 to D4 (move forward)
+              • Must jump if possible
+              <br />
+              • Example: !move C3 to D4 (normal move)
+              <br />
+              • Example: !move C3 to E5 (jump over D4)
             </div>
           </div>
         </div>
@@ -286,32 +299,36 @@ export const CheckersBoard: React.FC = () => {
       <div className="grid grid-cols-8 gap-0 border-4 border-gray-700 mb-4 flex-shrink-0">
         {board.map((row, rowIdx) =>
           row.map((piece, colIdx) => {
-            const index = rowIdx * 8 + colIdx;
-            const isDark = (rowIdx + colIdx) % 2 === 1;
-            const isSelected = index === selectedPiece;
-            const isLegal = legalMoves.includes(index);
+            const isSelected = selectedSquare?.[0] === rowIdx && selectedSquare?.[1] === colIdx;
+            const isLegalMove = legalMoves.some(([r, c]) => r === rowIdx && c === colIdx);
+            const isHint = hint && 
+              ((hint.from[0] === rowIdx && hint.from[1] === colIdx) ||
+               (hint.to[0] === rowIdx && hint.to[1] === colIdx));
+            const isLight = (rowIdx + colIdx) % 2 === 0;
 
             return (
               <div
-                key={index}
-                onClick={() => handleSquareClick(index)}
-                className={`w-16 h-16 flex items-center justify-center text-5xl transition-all ${
-                  isDark ? 'bg-amber-800 cursor-pointer hover:bg-amber-700' : 'bg-amber-200'
-                } ${isSelected ? 'ring-4 ring-blue-500' : ''} ${
-                  isLegal ? 'ring-2 ring-green-400' : ''
-                }`}
+                key={`${rowIdx}-${colIdx}`}
+                onClick={() => handleSquareClick(rowIdx, colIdx)}
+                className={`w-16 h-16 flex items-center justify-center cursor-pointer transition-all ${
+                  isLight ? 'bg-gray-300' : 'bg-gray-800'
+                } ${isSelected ? 'ring-4 ring-blue-500 ring-inset' : ''} ${
+                  isLegalMove ? 'ring-4 ring-green-400 ring-inset' : ''
+                } ${isHint ? 'ring-4 ring-yellow-400 ring-inset animate-pulse' : ''} hover:opacity-80`}
               >
-                {piece !== null && (
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-transform hover:scale-110 ${
-                    Math.abs(piece) === 2 ? 'border-4 border-yellow-400' : ''
-                  } ${
-                    piece > 0 ? 'bg-red-600 shadow-lg' : 'bg-gray-900 shadow-lg'
+                {piece && (
+                  <div className={`w-12 h-12 rounded-full ${
+                    piece.color === 'red' ? 'bg-red-600' : 'bg-gray-900'
+                  } border-4 ${
+                    piece.color === 'red' ? 'border-red-400' : 'border-gray-600'
+                  } flex items-center justify-center shadow-lg ${
+                    piece.isKing ? 'ring-4 ring-yellow-400' : ''
                   }`}>
-                    {Math.abs(piece) === 2 && <span className="text-2xl">👑</span>}
+                    {piece.isKing && <span className="text-3xl">👑</span>}
                   </div>
                 )}
-                {isLegal && !piece && (
-                  <div className="w-4 h-4 rounded-full bg-green-400 opacity-60"></div>
+                {!piece && isLegalMove && !isLight && (
+                  <div className="w-4 h-4 rounded-full bg-green-500 opacity-50" />
                 )}
               </div>
             );
@@ -322,7 +339,7 @@ export const CheckersBoard: React.FC = () => {
       {/* Game Status */}
       <div className="text-white text-center flex-shrink-0">
         <p className="text-sm text-gray-400">
-          Current Turn: {game.getCurrentPlayer() === 1 ? '🔴 Red (You)' : '⚫ Black (AI)'}
+          Current Turn: {game.getCurrentPlayer() === 'red' ? '🔴 Red' : '⚫ Black'}
         </p>
       </div>
 
@@ -330,7 +347,9 @@ export const CheckersBoard: React.FC = () => {
       {game.isGameOver() && (
         <div className="mt-4 p-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex-shrink-0">
           <div className="text-2xl font-bold text-white text-center">
-            {game.getWinner() === 'player' ? '🎉 You Won!' : '🤖 AI Wins!'}
+            {game.getWinner() === 'red' && '🔴 Red Wins!'}
+            {game.getWinner() === 'black' && '⚫ Black Wins!'}
+            {game.getWinner() === 'draw' && '🤝 Draw!'}
           </div>
           <div className="text-sm text-white text-center mt-2">
             Game will restart in 10 seconds...
@@ -340,7 +359,3 @@ export const CheckersBoard: React.FC = () => {
     </div>
   );
 };
-
-function indexToPos(index: number): [number, number] {
-  return [Math.floor(index / 8), index % 8];
-}
