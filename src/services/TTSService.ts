@@ -1,464 +1,410 @@
-// ========================================
-// TTS SERVICE - Versión completa corregida
-// ========================================
-// src/services/TTSService.ts
+import type { TTSConfig } from '@/types';
 
-export type TTSProvider = 'coqui' | 'elevenlabs' | 'openai' | 'webspeech';
-
-export interface TTSConfig {
-  ttsUrl?: string;
-  speakerWavUrl?: string;
-  provider?: TTSProvider;
-  elevenlabsApiKey?: string;
-  elevenlabsVoiceId?: string;
-  openaiApiKey?: string;
-  voice?: string; // Para webspeech
-  rate?: number;  // Para webspeech
-  pitch?: number; // Para webspeech
+// Emotion detection for facial expressions
+export interface EmotionData {
+  emotion: 'happy' | 'sad' | 'angry' | 'surprised' | 'neutral';
+  intensity: number;
 }
 
-export interface QueueItem {
-  text: string;
-  language?: string;
-  animation?: string;
+export interface LipsyncData {
+  phonemes: Array<{
+    phoneme: string;
+    time: number;
+    duration: number;
+  }>;
+  duration: number;
 }
 
 export class TTSService {
-  private queue: QueueItem[] = [];
-  private isProcessing: boolean = false;
+  private config: TTSConfig;
+  private queue: Array<{ text: string; emotion?: EmotionData }> = [];
+  private speaking: boolean = false;
+  private isBrowser: boolean;
   private currentAudio: HTMLAudioElement | null = null;
-  private ttsUrl: string = '';
-  private speakerWavUrl: string = '';
-  private provider: TTSProvider = 'coqui';
-  private elevenlabsApiKey: string = '';
-  private elevenlabsVoiceId: string = '';
-  private openaiApiKey: string = '';
-  private voice: string = '';
-  private rate: number = 1;
-  private pitch: number = 1;
-  private onAnimationStart?: (animation: string) => void;
-  private onAnimationEnd?: () => void;
+  private onLipsyncCallback: ((data: LipsyncData) => void) | null = null;
+  private onEmotionCallback: ((emotion: EmotionData) => void) | null = null;
 
-  constructor(config?: TTSConfig) {
-    console.log('🎤 TTSService initialized');
-    if (config) {
-      this.updateConfig(config);
-    }
+  constructor(config: TTSConfig) {
+    this.config = config;
+    this.isBrowser = typeof window !== 'undefined';
   }
 
-  // ============================================
-  // CONFIGURACIÓN
-  // ============================================
-  
-  updateConfig(config: TTSConfig): void {
-    console.log('🔄 Actualizando config de TTSService:', config);
-    
-    if (config.ttsUrl) {
-      this.ttsUrl = config.ttsUrl;
-      console.log('✅ TTS URL actualizada:', this.ttsUrl);
-    }
-    
-    if (config.provider) {
-      this.provider = config.provider;
-      console.log('✅ Provider actualizado:', this.provider);
-    }
-    
-    // 👇 NUEVO: Configurar la URL del archivo de voz
-    if (config.speakerWavUrl) {
-      this.speakerWavUrl = config.speakerWavUrl;
-      console.log('✅ Speaker WAV URL configurada:', this.speakerWavUrl);
-    } else if (typeof window !== 'undefined') {
-      // URL por defecto (archivo en la carpeta public)
-      this.speakerWavUrl = `${window.location.origin}/miko.wav`;
-      console.log('⚠️ Usando Speaker WAV por defecto:', this.speakerWavUrl);
-    }
-
-    if (config.elevenlabsApiKey) {
-      this.elevenlabsApiKey = config.elevenlabsApiKey;
-      console.log('✅ ElevenLabs API Key configurada');
-    }
-
-    if (config.elevenlabsVoiceId) {
-      this.elevenlabsVoiceId = config.elevenlabsVoiceId;
-      console.log('✅ ElevenLabs Voice ID configurado');
-    }
-
-    if (config.openaiApiKey) {
-      this.openaiApiKey = config.openaiApiKey;
-      console.log('✅ OpenAI API Key configurada');
-    }
-
-    if (config.voice) {
-      this.voice = config.voice;
-      console.log('✅ WebSpeech Voice configurada:', this.voice);
-    }
-
-    if (config.rate !== undefined) {
-      this.rate = config.rate;
-      console.log('✅ WebSpeech Rate configurado:', this.rate);
-    }
-
-    if (config.pitch !== undefined) {
-      this.pitch = config.pitch;
-      console.log('✅ WebSpeech Pitch configurado:', this.pitch);
-    }
+  /**
+   * Set callback for lipsync events
+   */
+  setLipsyncCallback(callback: (data: LipsyncData) => void) {
+    this.onLipsyncCallback = callback;
   }
 
-  setAnimationCallbacks(
-    onStart?: (animation: string) => void,
-    onEnd?: () => void
-  ): void {
-    this.onAnimationStart = onStart;
-    this.onAnimationEnd = onEnd;
+  /**
+   * Set callback for emotion changes
+   */
+  setEmotionCallback(callback: (emotion: EmotionData) => void) {
+    this.onEmotionCallback = callback;
   }
 
-  // ============================================
-  // MÉTODO PRINCIPAL - HABLAR
-  // ============================================
-  
-  async speak(text: string, language: string = 'es'): Promise<void> {
-    // Extraer animación del texto
-    const animationMatch = text.match(/\[([A-Z_]+)\]/);
-    const animation = animationMatch ? animationMatch[1].toLowerCase() : '';
+  /**
+   * Detect emotion from animation tags
+   */
+  private detectEmotion(text: string): EmotionData | undefined {
+    const emotionMap: Record<string, EmotionData> = {
+      '[CELEBRATE]': { emotion: 'happy', intensity: 1.0 },
+      '[WAVE]': { emotion: 'happy', intensity: 0.7 },
+      '[HEART]': { emotion: 'happy', intensity: 0.9 },
+      '[THUMBSUP]': { emotion: 'happy', intensity: 0.8 },
+      '[DANCE]': { emotion: 'happy', intensity: 1.0 },
+      '[SAD]': { emotion: 'sad', intensity: 0.9 },
+      '[ANGRY]': { emotion: 'angry', intensity: 0.9 },
+      '[SURPRISED]': { emotion: 'surprised', intensity: 1.0 },
+      '[THINK]': { emotion: 'neutral', intensity: 0.5 },
+      '[BOW]': { emotion: 'neutral', intensity: 0.3 },
+    };
+
+    for (const [tag, emotion] of Object.entries(emotionMap)) {
+      if (text.includes(tag)) {
+        return emotion;
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Clean text - remove animation tags and formatting
+   */
+  private cleanText(text: string): string {
+    // Remove all animation tags
+    let cleaned = text.replace(/\[WAVE\]/gi, '');
+    cleaned = cleaned.replace(/\[CELEBRATE\]/gi, '');
+    cleaned = cleaned.replace(/\[BOW\]/gi, '');
+    cleaned = cleaned.replace(/\[DANCE\]/gi, '');
+    cleaned = cleaned.replace(/\[THINK\]/gi, '');
+    cleaned = cleaned.replace(/\[THUMBSUP\]/gi, '');
+    cleaned = cleaned.replace(/\[HEART\]/gi, '');
+    cleaned = cleaned.replace(/\[SAD\]/gi, '');
+    cleaned = cleaned.replace(/\[ANGRY\]/gi, '');
+    cleaned = cleaned.replace(/\[SURPRISED\]/gi, '');
     
-    // Limpiar el texto de tags de animación
-    const cleanText = text.replace(/\[([A-Z_]+)\]/g, '').trim();
+    // Remove any remaining brackets
+    cleaned = cleaned.replace(/\[.*?\]/g, '');
     
-    if (!cleanText) {
-      console.warn('⚠️ Texto vacío después de limpiar animaciones');
+    // Clean up extra whitespace
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    
+    return cleaned;
+  }
+
+  /**
+   * Generate simple phoneme-based lipsync data from audio
+   * This is a simplified version - for production you'd use a proper phoneme analyzer
+   */
+  private generateLipsyncData(audioBuffer: AudioBuffer): LipsyncData {
+    const duration = audioBuffer.duration;
+    const sampleRate = audioBuffer.sampleRate;
+    const channelData = audioBuffer.getChannelData(0);
+    
+    // Simple energy-based phoneme detection
+    const windowSize = Math.floor(sampleRate * 0.05); // 50ms windows
+    const phonemes: LipsyncData['phonemes'] = [];
+    
+    for (let i = 0; i < channelData.length; i += windowSize) {
+      const window = channelData.slice(i, i + windowSize);
+      const energy = window.reduce((sum, val) => sum + Math.abs(val), 0) / window.length;
+      
+      // Map energy to phoneme (simplified)
+      let phoneme = 'neutral';
+      if (energy > 0.1) phoneme = 'aa'; // Open mouth
+      else if (energy > 0.05) phoneme = 'ee'; // Slight open
+      else phoneme = 'neutral'; // Closed
+      
+      phonemes.push({
+        phoneme,
+        time: i / sampleRate,
+        duration: windowSize / sampleRate
+      });
+    }
+    
+    return { phonemes, duration };
+  }
+
+  /**
+   * Main speak function with emotion detection and lipsync
+   */
+  async speak(text: string): Promise<void> {
+    if (!this.isBrowser || !this.config.enabled || !text || text.trim() === '') return;
+
+    // Detect emotion before cleaning
+    const emotion = this.detectEmotion(text);
+    
+    // Clean text for TTS
+    const cleanText = this.cleanText(text);
+    
+    if (!cleanText || cleanText.trim() === '') {
+      console.log('No text to speak after cleaning tags');
       return;
     }
 
-    this.queue.push({ text: cleanText, language, animation });
-    
-    if (!this.isProcessing) {
-      await this.processQueue();
-    }
+    // Add to queue
+    this.queue.push({ text: cleanText, emotion });
+    this.processQueue();
   }
 
-  // ============================================
-  // COLA DE PROCESAMIENTO
-  // ============================================
-  
   private async processQueue(): Promise<void> {
-    if (this.queue.length === 0) {
-      this.isProcessing = false;
-      return;
-    }
+    if (this.speaking || this.queue.length === 0) return;
 
-    this.isProcessing = true;
-    const item = this.queue.shift();
-    
-    if (!item) {
-      await this.processQueue();
-      return;
-    }
-
-    const { text, language, animation } = item;
+    const { text, emotion } = this.queue.shift()!;
+    this.speaking = true;
 
     try {
-      // Disparar animación si existe
-      if (animation && this.onAnimationStart) {
-        console.log('🎬 Playing animation:', animation);
-        this.onAnimationStart(animation);
+      // Trigger emotion callback if available
+      if (emotion && this.onEmotionCallback) {
+        this.onEmotionCallback(emotion);
       }
 
-      // Generar y reproducir el audio
-      switch (this.provider) {
-        case 'coqui':
-          await this.speakCoqui(text, language || 'es');
-          break;
+      // Generate speech based on provider
+      switch (this.config.provider) {
         case 'elevenlabs':
-          await this.speakElevenLabs(text, language || 'en');
+          await this.speakElevenLabs(text);
           break;
-        case 'openai':
-          await this.speakOpenAI(text);
-          break;
-        case 'webspeech':
-          await this.speakWebSpeech(text, language || 'en-US');
+        case 'coqui-local':
+        case 'coqui-colab':
+          await this.speakCoqui(text);
           break;
         default:
-          console.warn('⚠️ Provider no soportado:', this.provider);
+          await this.speakWebSpeech(text);
       }
-
-      // Terminar animación
-      if (this.onAnimationEnd) {
-        this.onAnimationEnd();
-      }
-
     } catch (error) {
-      console.error('❌ TTS Error:', error);
-      if (this.onAnimationEnd) {
-        this.onAnimationEnd();
+      console.error('TTS Error:', error);
+      // Fallback to Web Speech
+      try {
+        await this.speakWebSpeech(text);
+      } catch (fallbackError) {
+        console.error('Fallback TTS also failed:', fallbackError);
       }
-    }
-
-    // Continuar con el siguiente item
-    await this.processQueue();
-  }
-
-  // ============================================
-  // COQUI TTS (XTTS v2)
-  // ============================================
-  
-  private async speakCoqui(text: string, language: string = 'es'): Promise<void> {
-    try {
-      console.log('🔧 Adding Ngrok bypass header');
-      console.log('🔊 Calling Coqui TTS:', this.ttsUrl);
-      
-      // 👇 CUERPO CORREGIDO CON SPEAKER_WAV
-      const requestBody = {
-        text: text,
-        language: language,
-        speaker_wav: this.speakerWavUrl // 👈 ESTO ES LO IMPORTANTE
-      };
-      
-      console.log('📤 Request body:', requestBody);
-      
-      const headers = {
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true'
-      };
-      
-      console.log('📤 Headers:', headers);
-
-      const response = await fetch(this.ttsUrl, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Coqui TTS error:', response.status, errorText);
-        throw new Error(`Coqui TTS error: ${response.status} - ${errorText}`);
+    } finally {
+      this.speaking = false;
+      // Process next in queue
+      if (this.queue.length > 0) {
+        setTimeout(() => this.processQueue(), 300);
       }
-
-      console.log('✅ TTS response OK, getting audio blob');
-      const audioBlob = await response.blob();
-      console.log('📦 Audio blob size:', audioBlob.size, 'bytes');
-      
-      const audioUrl = URL.createObjectURL(audioBlob);
-      console.log('🎵 Audio URL created:', audioUrl);
-
-      // Reproducir el audio
-      await this.playAudio(audioUrl);
-
-    } catch (error) {
-      console.error('❌ Coqui fetch error:', error);
-      throw error;
     }
   }
 
-  // ============================================
-  // ELEVENLABS TTS
-  // ============================================
-  
-  private async speakElevenLabs(text: string, language: string = 'en'): Promise<void> {
-    try {
-      console.log('🔊 Calling ElevenLabs TTS');
+  private async speakElevenLabs(text: string): Promise<void> {
+    const apiKey = this.config.elevenLabsApiKey;
+    const voiceId = this.config.elevenLabsVoiceId;
 
-      if (!this.elevenlabsApiKey) {
-        throw new Error('ElevenLabs API key not configured');
-      }
+    if (!apiKey || !voiceId) {
+      throw new Error('ElevenLabs API key and Voice ID required');
+    }
 
-      const url = `https://api.elevenlabs.io/v1/text-to-speech/${this.elevenlabsVoiceId}`;
+    const model = this.config.elevenLabsModel || 'eleven_monolingual_v1';
 
-      const response = await fetch(url, {
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
         method: 'POST',
         headers: {
+          'Accept': 'audio/mpeg',
           'Content-Type': 'application/json',
-          'xi-api-key': this.elevenlabsApiKey
+          'xi-api-key': apiKey
         },
         body: JSON.stringify({
           text: text,
-          model_id: 'eleven_multilingual_v2',
+          model_id: model,
           voice_settings: {
             stability: 0.5,
-            similarity_boost: 0.75
+            similarity_boost: 0.75,
+            style: 0.0,
+            use_speaker_boost: true
           }
         })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`ElevenLabs error: ${response.status} - ${errorText}`);
       }
+    );
 
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-
-      await this.playAudio(audioUrl);
-
-    } catch (error) {
-      console.error('❌ ElevenLabs error:', error);
-      throw error;
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`ElevenLabs API error: ${response.status} - ${error}`);
     }
+
+    const audioBlob = await response.blob();
+    return this.playAudioBlobWithLipsync(audioBlob);
   }
 
-  // ============================================
-  // OPENAI TTS
-  // ============================================
-  
-  private async speakOpenAI(text: string): Promise<void> {
+  private async speakCoqui(text: string): Promise<void> {
+    // ✅ Clean URL - remove trailing slashes
+    let url = this.config.colabUrl || 'http://localhost:5000';
+    url = url.replace(/\/+$/, ''); // Remove all trailing slashes
+    
+    const useClone = this.config.useClone;
+    const voicePath = this.config.cloneVoicePath;
+
+    const body: any = { 
+      text,
+      speed: this.config.speed || 1.0
+    };
+
+    if (useClone && voicePath) {
+      body.voice = voicePath;
+    }
+
+    if (this.config.multilingualDetection) {
+      body.detect_language = true;
+    }
+
+    // ✅ Build headers with Ngrok bypass
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add Ngrok bypass header if URL contains ngrok
+    if (url.includes('ngrok')) {
+      console.log('🔧 Adding Ngrok bypass header');
+      headers['ngrok-skip-browser-warning'] = 'true';
+    }
+
+    console.log('🔊 Calling Coqui TTS:', `${url}/api/tts`);
+    console.log('📤 Headers:', headers);
+
     try {
-      console.log('🔊 Calling OpenAI TTS');
-
-      if (!this.openaiApiKey) {
-        throw new Error('OpenAI API key not configured');
-      }
-
-      const response = await fetch('https://api.openai.com/v1/audio/speech', {
+      const response = await fetch(`${url}/api/tts`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.openaiApiKey}`
-        },
-        body: JSON.stringify({
-          model: 'tts-1',
-          voice: 'nova',
-          input: text
-        })
+        headers: headers,
+        body: JSON.stringify(body),
+        mode: 'cors', // ✅ Explicitly set CORS mode
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`OpenAI TTS error: ${response.status} - ${errorText}`);
+        const error = await response.text();
+        console.error('❌ Coqui TTS error:', response.status, error);
+        throw new Error(`Coqui TTS error: ${response.status} - ${error}`);
       }
 
       const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-
-      await this.playAudio(audioUrl);
-
+      return this.playAudioBlobWithLipsync(audioBlob);
     } catch (error) {
-      console.error('❌ OpenAI TTS error:', error);
+      console.error('❌ Fetch error:', error);
+      
+      // Provide helpful error message
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        throw new Error(
+          `Cannot connect to TTS server at ${url}. ` +
+          `Make sure:\n` +
+          `1. The server is running\n` +
+          `2. The URL is correct (check for https vs http)\n` +
+          `3. CORS is enabled on the server\n` +
+          `4. If using ngrok, the URL is up to date`
+        );
+      }
+      
       throw error;
     }
   }
 
-  // ============================================
-  // WEB SPEECH API
-  // ============================================
-  
-  private async speakWebSpeech(text: string, language: string = 'en-US'): Promise<void> {
-    return new Promise((resolve, reject) => {
+  private async playAudioBlobWithLipsync(blob: Blob): Promise<void> {
+    return new Promise(async (resolve, reject) => {
       try {
-        console.log('🔊 Calling Web Speech API');
+        // Create audio element
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        audio.volume = 1.0;
+        
+        this.currentAudio = audio;
 
-        if (!('speechSynthesis' in window)) {
-          throw new Error('Web Speech API not supported in this browser');
+        // Generate lipsync data if callback is set
+        if (this.onLipsyncCallback) {
+          // Decode audio to get buffer for lipsync analysis
+          const arrayBuffer = await blob.arrayBuffer();
+          const audioContext = new AudioContext();
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+          
+          const lipsyncData = this.generateLipsyncData(audioBuffer);
+          
+          // Start lipsync animation
+          this.onLipsyncCallback(lipsyncData);
         }
 
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = language;
-        utterance.rate = this.rate;
-        utterance.pitch = this.pitch;
-
-        // Si se especificó una voz, buscarla
-        if (this.voice) {
-          const voices = window.speechSynthesis.getVoices();
-          const selectedVoice = voices.find(v => v.name === this.voice);
-          if (selectedVoice) {
-            utterance.voice = selectedVoice;
-          }
-        }
-
-        utterance.onend = () => {
-          console.log('✅ Web Speech finished');
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
+          this.currentAudio = null;
           resolve();
         };
 
-        utterance.onerror = (error) => {
-          console.error('❌ Web Speech error:', error);
+        audio.onerror = (error) => {
+          URL.revokeObjectURL(audioUrl);
+          this.currentAudio = null;
           reject(error);
         };
 
-        window.speechSynthesis.speak(utterance);
-
+        await audio.play();
       } catch (error) {
-        console.error('❌ Web Speech error:', error);
         reject(error);
       }
     });
   }
 
-  // ============================================
-  // REPRODUCIR AUDIO
-  // ============================================
-  
-  private async playAudio(audioUrl: string): Promise<void> {
+  private async speakWebSpeech(text: string): Promise<void> {
+    if (!this.isBrowser) return Promise.resolve();
+
     return new Promise((resolve, reject) => {
-      const audio = new Audio(audioUrl);
-      this.currentAudio = audio;
+      if (!window.speechSynthesis) {
+        reject(new Error('Browser does not support Web Speech API'));
+        return;
+      }
 
-      audio.onended = () => {
-        console.log('✅ Audio playback finished');
-        URL.revokeObjectURL(audioUrl);
-        this.currentAudio = null;
-        resolve();
-      };
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'es-ES';
+      utterance.rate = this.config.speed || 1.0;
+      utterance.pitch = this.config.pitch || 1.0;
+      utterance.volume = 1.0;
 
-      audio.onerror = (error) => {
-        console.error('❌ Audio playback error:', error);
-        URL.revokeObjectURL(audioUrl);
-        this.currentAudio = null;
-        reject(error);
-      };
+      // Simple lipsync for Web Speech (no detailed phoneme data available)
+      if (this.onLipsyncCallback) {
+        const estimatedDuration = text.length * 0.05; // Rough estimate
+        const simpleLipsync: LipsyncData = {
+          phonemes: [
+            { phoneme: 'aa', time: 0, duration: estimatedDuration }
+          ],
+          duration: estimatedDuration
+        };
+        this.onLipsyncCallback(simpleLipsync);
+      }
 
-      audio.play().catch((error) => {
-        console.error('❌ Error playing audio:', error);
-        URL.revokeObjectURL(audioUrl);
-        this.currentAudio = null;
-        reject(error);
-      });
+      utterance.onend = () => resolve();
+      utterance.onerror = (event) => reject(event);
+
+      speechSynthesis.speak(utterance);
     });
   }
 
-  // ============================================
-  // CONTROL
-  // ============================================
-  
   stop(): void {
-    // Detener audio HTML
+    if (!this.isBrowser) return;
+
+    // Stop current audio
     if (this.currentAudio) {
       this.currentAudio.pause();
-      this.currentAudio.currentTime = 0;
       this.currentAudio = null;
     }
-    
-    // Detener Web Speech API
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+
+    // Stop Web Speech API
+    if (window.speechSynthesis) {
+      speechSynthesis.cancel();
     }
-    
+
+    // Clear queue
     this.queue = [];
-    this.isProcessing = false;
-    console.log('🛑 TTS stopped');
+    this.speaking = false;
+  }
+
+  updateConfig(config: TTSConfig): void {
+    this.config = config;
   }
 
   clearQueue(): void {
     this.queue = [];
-    console.log('🗑️ Queue cleared');
   }
 
-  getQueueLength(): number {
-    return this.queue.length;
-  }
-
-  isPlaying(): boolean {
-    return this.currentAudio !== null && !this.currentAudio.paused;
+  isSpeaking(): boolean {
+    return this.speaking;
   }
 }
-
-// Singleton instance
-let ttsServiceInstance: TTSService | null = null;
-
-export const getTTSService = (): TTSService => {
-  if (!ttsServiceInstance) {
-    ttsServiceInstance = new TTSService();
-  }
-  return ttsServiceInstance;
-};
-
-export default TTSService;
