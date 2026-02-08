@@ -12,6 +12,7 @@ export const ChessBoard: React.FC = () => {
   const [showHint, setShowHint] = useState(false);
   const [showCommands, setShowCommands] = useState(true);
   const [autoRestartTimer, setAutoRestartTimer] = useState<number | null>(null);
+  const [aiThinking, setAiThinking] = useState(false);
 
   useEffect(() => {
     const newGame = new ChessGame(gameState.aiColor, async (move) => {
@@ -60,6 +61,45 @@ export const ChessBoard: React.FC = () => {
     setGame(newGame);
   }, []);
 
+  // ✅ NUEVO: Este useEffect hace que la IA juegue automáticamente
+  useEffect(() => {
+    if (!game || aiThinking) return;
+
+    // Esperar a que el juego esté inicializado
+    const initAndPlay = async () => {
+      const initialized = await game.waitForInit();
+      if (!initialized) {
+        console.error('❌ Game failed to initialize');
+        return;
+      }
+
+      // Verificar si es el turno de la IA y el juego no ha terminado
+      const aiPlayer = gameState.aiColor === 'white' ? 'w' : 'b';
+      
+      if (game.turn() === aiPlayer && !game.isGameOver()) {
+        console.log('🤖 AI turn detected, making move...');
+        setAiThinking(true);
+
+        try {
+          await game.makeAIMove();
+        } catch (error) {
+          console.error('❌ Error making AI move:', error);
+          addChatMessage({
+            id: Date.now().toString(),
+            username: 'System',
+            message: 'AI encountered an error making a move',
+            timestamp: Date.now(),
+            color: '#ef4444'
+          });
+        } finally {
+          setAiThinking(false);
+        }
+      }
+    };
+
+    initAndPlay();
+  }, [game?.turn(), game?.isGameOver(), aiThinking]);
+
   // Auto-restart after 10 seconds when game is over
   useEffect(() => {
     if (game && game.isGameOver()) {
@@ -105,7 +145,7 @@ export const ChessBoard: React.FC = () => {
   }, [chatMessages, game]);
 
   const handleCommandMove = (fromNotation: string, toNotation: string) => {
-    if (!game) return;
+    if (!game || aiThinking) return;
     
     const from = fromNotation.toLowerCase();
     const to = toNotation.toLowerCase();
@@ -157,7 +197,7 @@ export const ChessBoard: React.FC = () => {
   };
 
   const handleSquareClick = (row: number, col: number) => {
-    if (!game || game.isGameOver()) return;
+    if (!game || game.isGameOver() || aiThinking) return;
 
     const aiPlayer = gameState.aiColor === 'white' ? 'w' : 'b';
     
@@ -216,6 +256,7 @@ export const ChessBoard: React.FC = () => {
       setAutoRestartTimer(null);
     }
 
+    setAiThinking(false);
     game?.reset();
     setSelectedSquare(null);
     setLegalMoves([]);
@@ -302,7 +343,7 @@ export const ChessBoard: React.FC = () => {
           <button 
             onClick={handleHint} 
             className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
-            disabled={game.isGameOver()}
+            disabled={game.isGameOver() || aiThinking}
           >
             <HelpCircle size={16} /> Hint
           </button>
@@ -339,6 +380,16 @@ export const ChessBoard: React.FC = () => {
         </div>
       )}
 
+      {/* AI Thinking Indicator */}
+      {aiThinking && (
+        <div className="mb-4 w-full bg-purple-900 bg-opacity-50 rounded-lg p-3 border border-purple-600 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            <span className="text-white font-semibold">AI is thinking...</span>
+          </div>
+        </div>
+      )}
+
       {/* Board */}
       <div className="grid grid-cols-8 gap-0 border-4 border-gray-700 mb-4 flex-shrink-0">
         {board.map((row, rowIdx) =>
@@ -355,14 +406,14 @@ export const ChessBoard: React.FC = () => {
                   isLight ? 'bg-amber-100' : 'bg-amber-700'
                 } ${isSelected ? 'ring-4 ring-blue-500 ring-inset' : ''} ${
                   isLegalMove ? 'ring-4 ring-green-400 ring-inset' : ''
-                } hover:opacity-80`}
+                } ${aiThinking ? 'cursor-not-allowed opacity-70' : 'hover:opacity-80'}`}
               >
                 {piece && (
                   <span className="text-5xl select-none">
                     {getPieceSymbol(piece)}
                   </span>
                 )}
-                {!piece && isLegalMove && (
+                {!piece && isLegalMove && !aiThinking && (
                   <div className="w-4 h-4 rounded-full bg-green-500 opacity-50" />
                 )}
               </div>
@@ -375,6 +426,7 @@ export const ChessBoard: React.FC = () => {
       <div className="text-white text-center flex-shrink-0">
         <p className="text-sm text-gray-400">
           Current Turn: {game.turn() === 'w' ? '⚪ White' : '⚫ Black'}
+          {aiThinking && ' - AI is thinking...'}
         </p>
         {game.isCheck() && <p className="text-red-500 font-bold mt-2">⚠️ CHECK!</p>}
       </div>
