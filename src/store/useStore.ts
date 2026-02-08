@@ -64,7 +64,8 @@ export const useStore = create<AppStore>((set) => ({
   chatMessages: [],
   currentAnimation: null,
   isProcessing: false,
-  vtuberPosition: [0, -1, 0],
+  // Posición Y ajustada de -1 a 0.5 para que el modelo se vea más arriba
+  vtuberPosition: [0, 0.5, 0],
   vtuberRotation: [0, 0, 0],
 
   setConfig: (newConfig) =>
