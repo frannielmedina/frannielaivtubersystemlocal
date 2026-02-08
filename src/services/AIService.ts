@@ -2,6 +2,8 @@ import type { AIConfig, AIMessage } from '@/types';
 
 export class AIService {
   private config: AIConfig;
+  private conversationHistory: AIMessage[] = [];
+  private maxHistoryLength: number = 10; // Últimos 10 mensajes
 
   constructor(config: AIConfig) {
     this.config = config;
@@ -12,23 +14,61 @@ export class AIService {
     console.log('📝 Provider:', this.config.provider);
     console.log('🎯 Model:', this.config.model);
     console.log('🔑 API Key length:', this.config.apiKey?.length || 0);
+    console.log('📚 History length:', this.conversationHistory.length);
 
     if (!this.config.apiKey) {
       throw new Error('API Key not configured');
     }
 
+    // Combinar system prompt + historial + nuevo mensaje
+    const systemMessage = messages.find(m => m.role === 'system');
+    const userMessage = messages.find(m => m.role === 'user');
+
+    if (!userMessage) {
+      throw new Error('No user message provided');
+    }
+
+    // Construir mensajes completos con historial
+    const fullMessages: AIMessage[] = [
+      ...(systemMessage ? [systemMessage] : []),
+      ...this.conversationHistory,
+      userMessage
+    ];
+
+    console.log('💬 Full conversation:', fullMessages.length, 'messages');
+
+    let response: string;
+
     switch (this.config.provider) {
       case 'groq':
-        return this.callGroq(messages);
+        response = await this.callGroq(fullMessages);
+        break;
       case 'openrouter':
-        return this.callOpenRouter(messages);
+        response = await this.callOpenRouter(fullMessages);
+        break;
       case 'mistral':
-        return this.callMistral(messages);
+        response = await this.callMistral(fullMessages);
+        break;
       case 'perplexity':
-        return this.callPerplexity(messages);
+        response = await this.callPerplexity(fullMessages);
+        break;
       default:
         throw new Error(`Unsupported provider: ${this.config.provider}`);
     }
+
+    // Guardar en historial
+    this.conversationHistory.push(userMessage);
+    this.conversationHistory.push({
+      role: 'assistant',
+      content: response
+    });
+
+    // Limitar tamaño del historial
+    if (this.conversationHistory.length > this.maxHistoryLength * 2) {
+      this.conversationHistory = this.conversationHistory.slice(-this.maxHistoryLength * 2);
+    }
+
+    return response;
   }
 
   private async callGroq(messages: AIMessage[]): Promise<string> {
@@ -43,7 +83,7 @@ export class AIService {
     };
 
     console.log('📤 Request URL:', url);
-    console.log('📤 Request body:', JSON.stringify(body, null, 2));
+    console.log('📤 Request messages:', messages.length);
 
     try {
       const response = await fetch(url, {
@@ -180,5 +220,19 @@ export class AIService {
   updateConfig(config: AIConfig) {
     console.log('🔄 Actualizando config de AIService:', config);
     this.config = config;
+  }
+
+  clearHistory() {
+    console.log('🗑️ Limpiando historial de conversación');
+    this.conversationHistory = [];
+  }
+
+  getHistory(): AIMessage[] {
+    return [...this.conversationHistory];
+  }
+
+  setMaxHistoryLength(length: number) {
+    this.maxHistoryLength = length;
+    console.log('📏 Max history length:', length);
   }
 }
