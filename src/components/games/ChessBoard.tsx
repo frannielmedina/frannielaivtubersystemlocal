@@ -20,21 +20,22 @@ export const ChessBoard: React.FC = () => {
           const winner = newGame.getWinner();
           let message = '';
           
-          if (winner === 'checkmate_white') {
+          // FIXED: Handle correct winner types
+          if (winner === 'white') {
             message = gameState.aiColor === 'white' ? 'Checkmate! I win! 👑' : 'Checkmate! You won! 🎉';
             setAnimation({ 
               type: 'emote', 
               name: gameState.aiColor === 'white' ? 'heart' : 'sad', 
               duration: 3000 
             });
-          } else if (winner === 'checkmate_black') {
+          } else if (winner === 'black') {
             message = gameState.aiColor === 'black' ? 'Checkmate! I win! 👑' : 'Checkmate! You won! 🎉';
             setAnimation({ 
               type: 'emote', 
               name: gameState.aiColor === 'black' ? 'heart' : 'sad', 
               duration: 3000 
             });
-          } else if (winner === 'stalemate') {
+          } else if (winner === 'draw') {
             message = 'Stalemate! It\'s a draw! 🤝';
             setAnimation({ type: 'emote', name: 'surprised', duration: 2000 });
           }
@@ -101,12 +102,12 @@ export const ChessBoard: React.FC = () => {
   const handleCommandMove = (fromNotation: string, toNotation: string) => {
     if (!game) return;
     
-    const from = chessNotationToRowCol(fromNotation);
-    const to = chessNotationToRowCol(toNotation);
+    const from = fromNotation.toLowerCase();
+    const to = toNotation.toLowerCase();
     
-    const aiPlayer = gameState.aiColor === 'white' ? 'white' : 'black';
+    const aiPlayer = gameState.aiColor === 'white' ? 'w' : 'b';
     
-    if (game.getCurrentPlayer() === aiPlayer) {
+    if (game.turn() === aiPlayer) {
       addChatMessage({
         id: Date.now().toString(),
         username: 'System',
@@ -117,7 +118,7 @@ export const ChessBoard: React.FC = () => {
       return;
     }
     
-    const move = game.makeMove(from.row, from.col, to.row, to.col);
+    const move = game.makePlayerMove(from, to);
     
     if (move) {
       addChatMessage({
@@ -147,15 +148,15 @@ export const ChessBoard: React.FC = () => {
   };
 
   const rowColToChessNotation = (row: number, col: number): string => {
-    return String.fromCharCode('A'.charCodeAt(0) + col) + (8 - row);
+    return String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row);
   };
 
   const handleSquareClick = (row: number, col: number) => {
     if (!game || game.isGameOver()) return;
 
-    const aiPlayer = gameState.aiColor === 'white' ? 'white' : 'black';
+    const aiPlayer = gameState.aiColor === 'white' ? 'w' : 'b';
     
-    if (game.getCurrentPlayer() === aiPlayer) {
+    if (game.turn() === aiPlayer) {
       addChatMessage({
         id: Date.now().toString(),
         username: 'Miko',
@@ -167,28 +168,39 @@ export const ChessBoard: React.FC = () => {
       return;
     }
 
+    const square = rowColToChessNotation(row, col);
+
     if (selectedSquare) {
       const [fromRow, fromCol] = selectedSquare;
-      const move = game.makeMove(fromRow, fromCol, row, col);
+      const from = rowColToChessNotation(fromRow, fromCol);
+      const to = square;
+      
+      const move = game.makePlayerMove(from, to);
       
       if (move) {
         setSelectedSquare(null);
         setLegalMoves([]);
       } else {
-        const piece = game.getPieceAt(row, col);
-        if (piece && piece.color === game.getCurrentPlayer()) {
+        const moves = game.getLegalMoves(square);
+        if (moves.length > 0) {
           setSelectedSquare([row, col]);
-          setLegalMoves(game.getLegalMoves(row, col));
+          setLegalMoves(moves.map(m => {
+            const { row: r, col: c } = chessNotationToRowCol(m);
+            return [r, c] as [number, number];
+          }));
         } else {
           setSelectedSquare(null);
           setLegalMoves([]);
         }
       }
     } else {
-      const piece = game.getPieceAt(row, col);
-      if (piece && piece.color === game.getCurrentPlayer()) {
+      const moves = game.getLegalMoves(square);
+      if (moves.length > 0) {
         setSelectedSquare([row, col]);
-        setLegalMoves(game.getLegalMoves(row, col));
+        setLegalMoves(moves.map(m => {
+          const { row: r, col: c } = chessNotationToRowCol(m);
+          return [r, c] as [number, number];
+        }));
       }
     }
   };
@@ -217,38 +229,54 @@ export const ChessBoard: React.FC = () => {
 
   const handleHint = () => {
     if (!game) return;
-    const hint = game.getHint();
-    if (hint) {
-      const fromNotation = rowColToChessNotation(hint.from[0], hint.from[1]);
-      const toNotation = rowColToChessNotation(hint.to[0], hint.to[1]);
-      addChatMessage({
-        id: Date.now().toString(),
-        username: 'Miko',
-        message: `💡 Hint: Move ${fromNotation} to ${toNotation}`,
-        timestamp: Date.now(),
-        isAI: true,
-        color: '#3b82f6'
-      });
-      setShowHint(true);
-      setTimeout(() => setShowHint(false), 3000);
+    
+    const board = game.getBoard();
+    const turn = game.turn();
+    
+    // Find a piece that can move
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const square = rowColToChessNotation(row, col);
+        const piece = board[row][col];
+        
+        if (piece && piece[0] === turn) {
+          const moves = game.getLegalMoves(square);
+          if (moves.length > 0) {
+            const to = moves[0];
+            addChatMessage({
+              id: Date.now().toString(),
+              username: 'Miko',
+              message: `💡 Hint: Move ${square.toUpperCase()} to ${to.toUpperCase()}`,
+              timestamp: Date.now(),
+              isAI: true,
+              color: '#3b82f6'
+            });
+            setShowHint(true);
+            setTimeout(() => setShowHint(false), 3000);
+            return;
+          }
+        }
+      }
     }
   };
 
   if (!game) return <div className="text-white">Loading...</div>;
 
   const board = game.getBoard();
-  const hint = showHint ? game.getHint() : null;
 
-  const getPieceSymbol = (type: string, color: string): string => {
-    const pieces: { [key: string]: { white: string; black: string } } = {
-      pawn: { white: '♙', black: '♟' },
-      rook: { white: '♖', black: '♜' },
-      knight: { white: '♘', black: '♞' },
-      bishop: { white: '♗', black: '♝' },
-      queen: { white: '♕', black: '♛' },
-      king: { white: '♔', black: '♚' },
+  const getPieceSymbol = (piece: string): string => {
+    if (!piece) return '';
+    
+    const [color, type] = piece;
+    const pieces: { [key: string]: { w: string; b: string } } = {
+      p: { w: '♙', b: '♟' },
+      r: { w: '♖', b: '♜' },
+      n: { w: '♘', b: '♞' },
+      b: { w: '♗', b: '♝' },
+      q: { w: '♕', b: '♛' },
+      k: { w: '♔', b: '♚' },
     };
-    return pieces[type][color];
+    return pieces[type]?.[color] || '';
   };
 
   return (
@@ -309,9 +337,6 @@ export const ChessBoard: React.FC = () => {
           row.map((piece, colIdx) => {
             const isSelected = selectedSquare?.[0] === rowIdx && selectedSquare?.[1] === colIdx;
             const isLegalMove = legalMoves.some(([r, c]) => r === rowIdx && c === colIdx);
-            const isHint = hint && 
-              ((hint.from[0] === rowIdx && hint.from[1] === colIdx) ||
-               (hint.to[0] === rowIdx && hint.to[1] === colIdx));
             const isLight = (rowIdx + colIdx) % 2 === 0;
 
             return (
@@ -322,11 +347,11 @@ export const ChessBoard: React.FC = () => {
                   isLight ? 'bg-amber-100' : 'bg-amber-700'
                 } ${isSelected ? 'ring-4 ring-blue-500 ring-inset' : ''} ${
                   isLegalMove ? 'ring-4 ring-green-400 ring-inset' : ''
-                } ${isHint ? 'ring-4 ring-yellow-400 ring-inset animate-pulse' : ''} hover:opacity-80`}
+                } hover:opacity-80`}
               >
                 {piece && (
                   <span className="text-5xl select-none">
-                    {getPieceSymbol(piece.type, piece.color)}
+                    {getPieceSymbol(piece)}
                   </span>
                 )}
                 {!piece && isLegalMove && (
@@ -341,18 +366,18 @@ export const ChessBoard: React.FC = () => {
       {/* Game Status */}
       <div className="text-white text-center flex-shrink-0">
         <p className="text-sm text-gray-400">
-          Current Turn: {game.getCurrentPlayer() === 'white' ? '⚪ White' : '⚫ Black'}
+          Current Turn: {game.turn() === 'w' ? '⚪ White' : '⚫ Black'}
         </p>
-        {game.isInCheck() && <p className="text-red-500 font-bold mt-2">⚠️ CHECK!</p>}
+        {game.isCheck() && <p className="text-red-500 font-bold mt-2">⚠️ CHECK!</p>}
       </div>
 
       {/* Game Over */}
       {game.isGameOver() && (
         <div className="mt-4 p-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex-shrink-0">
           <div className="text-2xl font-bold text-white text-center">
-            {game.getWinner() === 'checkmate_white' && '⚪ White Wins!'}
-            {game.getWinner() === 'checkmate_black' && '⚫ Black Wins!'}
-            {game.getWinner() === 'stalemate' && '🤝 Stalemate!'}
+            {game.getWinner() === 'white' && '⚪ White Wins!'}
+            {game.getWinner() === 'black' && '⚫ Black Wins!'}
+            {game.getWinner() === 'draw' && '🤝 Draw!'}
           </div>
           <div className="text-sm text-white text-center mt-2">
             Game will restart in 10 seconds...
