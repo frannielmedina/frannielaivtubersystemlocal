@@ -232,7 +232,7 @@ export class TTSService {
   }
 
   private async speakCoqui(text: string): Promise<void> {
-    // ✅ FIXED: Clean URL - remove trailing slashes
+    // ✅ Clean URL - remove trailing slashes
     let url = this.config.colabUrl || 'http://localhost:5000';
     url = url.replace(/\/+$/, ''); // Remove all trailing slashes
     
@@ -252,7 +252,7 @@ export class TTSService {
       body.detect_language = true;
     }
 
-    // ✅ FIXED: Build headers with Ngrok bypass
+    // ✅ Build headers with Ngrok bypass
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -266,20 +266,39 @@ export class TTSService {
     console.log('🔊 Calling Coqui TTS:', `${url}/api/tts`);
     console.log('📤 Headers:', headers);
 
-    const response = await fetch(`${url}/api/tts`, {
-      method: 'POST',
-      headers: headers,
-      body: JSON.stringify(body)
-    });
+    try {
+      const response = await fetch(`${url}/api/tts`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(body),
+        mode: 'cors', // ✅ Explicitly set CORS mode
+      });
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('❌ Coqui TTS error:', response.status, error);
-      throw new Error(`Coqui TTS error: ${response.status} - ${error}`);
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('❌ Coqui TTS error:', response.status, error);
+        throw new Error(`Coqui TTS error: ${response.status} - ${error}`);
+      }
+
+      const audioBlob = await response.blob();
+      return this.playAudioBlobWithLipsync(audioBlob);
+    } catch (error) {
+      console.error('❌ Fetch error:', error);
+      
+      // Provide helpful error message
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        throw new Error(
+          `Cannot connect to TTS server at ${url}. ` +
+          `Make sure:\n` +
+          `1. The server is running\n` +
+          `2. The URL is correct (check for https vs http)\n` +
+          `3. CORS is enabled on the server\n` +
+          `4. If using ngrok, the URL is up to date`
+        );
+      }
+      
+      throw error;
     }
-
-    const audioBlob = await response.blob();
-    return this.playAudioBlobWithLipsync(audioBlob);
   }
 
   private async playAudioBlobWithLipsync(blob: Blob): Promise<void> {
