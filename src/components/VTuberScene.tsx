@@ -391,9 +391,60 @@ export const VTuberScene: React.FC = () => {
   const config = useStore(state => state.config);
   const vtuberPosition = useStore(state => state.vtuberPosition);
   const vtuberRotation = useStore(state => state.vtuberRotation);
+  const setVTuberPosition = useStore(state => state.setVTuberPosition);
+  const setConfig = useStore(state => state.setConfig);
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+
+    const deltaX = (e.clientX - dragStart.x) * 0.003;
+    const deltaY = -(e.clientY - dragStart.y) * 0.003;
+
+    const newPosition: [number, number, number] = [
+      vtuberPosition[0] + deltaX,
+      vtuberPosition[1] + deltaY,
+      vtuberPosition[2]
+    ];
+
+    setVTuberPosition(newPosition);
+    setDragStart({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY * -0.001;
+    const newScale = Math.max(0.5, Math.min(2.5, config.vtuber.scale + delta));
+    
+    setConfig({
+      vtuber: {
+        ...config.vtuber,
+        scale: newScale
+      }
+    });
+  };
 
   return (
-    <div className="w-full h-full bg-gradient-to-b from-purple-900 to-blue-900">
+    <div 
+      className="w-full h-full bg-gradient-to-b from-purple-900 to-blue-900 relative"
+      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+      onWheel={handleWheel}
+    >
       <Canvas
         camera={{ 
           position: [0, 0.7, 2.8], 
@@ -420,6 +471,11 @@ export const VTuberScene: React.FC = () => {
           target={[0, 0.7, 0]}
         />
       </Canvas>
+
+      {/* Hint text */}
+      <div className="absolute bottom-4 right-4 bg-black bg-opacity-60 px-3 py-2 rounded text-white text-xs pointer-events-none">
+        🖱️ Arrastrar: Click + Move | 🔍 Zoom: Rueda del mouse
+      </div>
     </div>
   );
 };
