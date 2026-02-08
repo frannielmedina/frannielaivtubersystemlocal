@@ -19,7 +19,6 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   const modelLoadedRef = useRef(false);
 
   useEffect(() => {
-    // Only load model once
     if (modelLoadedRef.current) return;
     
     const loader = new GLTFLoader();
@@ -49,10 +48,8 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           obj.frustumCulled = false;
         });
 
-        // Rotate model 180 degrees to face camera
         vrm.scene.rotation.y = Math.PI;
 
-        // Set initial idle pose - arms slightly raised for visible movement
         const humanoid = vrm.humanoid;
         if (humanoid) {
           console.log('🦴 Setting up humanoid bones...');
@@ -61,19 +58,10 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
           const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
           
-          // Arms slightly raised for more visible idle animation
-          if (leftUpperArm) {
-            leftUpperArm.rotation.set(0, 0, 0.3);
-          }
-          if (rightUpperArm) {
-            rightUpperArm.rotation.set(0, 0, -0.3);
-          }
-          if (leftLowerArm) {
-            leftLowerArm.rotation.set(0, 0, 0.1);
-          }
-          if (rightLowerArm) {
-            rightLowerArm.rotation.set(0, 0, -0.1);
-          }
+          if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.3);
+          if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.3);
+          if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.1);
+          if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.1);
         }
 
         modelLoadedRef.current = true;
@@ -92,7 +80,6 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         console.error('❌ Error loading VRM:', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to load VRM model';
         
-        // Check for common errors
         if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
           setLoadError(`Model not found at: ${modelPath}`);
           console.error('💡 Make sure your VRM file is in: public/models/miko.vrm');
@@ -108,7 +95,6 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     );
 
     return () => {
-      // Cleanup on unmount
       if (vrm) {
         console.log('🧹 Cleaning up VRM model...');
         vrm.scene.traverse((obj) => {
@@ -157,70 +143,34 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     }
   });
 
-  // Show loading state
   if (isLoading) {
     return (
-      <Text
-        position={[0, 0, 0]}
-        fontSize={0.3}
-        color="#ffffff"
-        anchorX="center"
-        anchorY="middle"
-      >
+      <Text position={[0, 0, 0]} fontSize={0.3} color="#ffffff" anchorX="center" anchorY="middle">
         Loading VRM Model...
       </Text>
     );
   }
 
-  // Show error state
   if (loadError) {
     console.error('🚫 VRM Load Error:', loadError);
     return (
       <group>
-        <Text
-          position={[0, 0.5, 0]}
-          fontSize={0.2}
-          color="#ff6b6b"
-          anchorX="center"
-          anchorY="middle"
-          maxWidth={3}
-        >
+        <Text position={[0, 0.5, 0]} fontSize={0.2} color="#ff6b6b" anchorX="center" anchorY="middle" maxWidth={3}>
           Error Loading VRM
         </Text>
-        <Text
-          position={[0, 0, 0]}
-          fontSize={0.15}
-          color="#ffffff"
-          anchorX="center"
-          anchorY="middle"
-          maxWidth={4}
-        >
+        <Text position={[0, 0, 0]} fontSize={0.15} color="#ffffff" anchorX="center" anchorY="middle" maxWidth={4}>
           {loadError}
         </Text>
-        <Text
-          position={[0, -0.5, 0]}
-          fontSize={0.12}
-          color="#aaaaaa"
-          anchorX="center"
-          anchorY="middle"
-          maxWidth={4}
-        >
+        <Text position={[0, -0.5, 0]} fontSize={0.12} color="#aaaaaa" anchorX="center" anchorY="middle" maxWidth={4}>
           Check browser console (F12) for details
         </Text>
       </group>
     );
   }
 
-  // Show waiting state
   if (!vrm) {
     return (
-      <Text
-        position={[0, 0, 0]}
-        fontSize={0.2}
-        color="#cccccc"
-        anchorX="center"
-        anchorY="middle"
-      >
+      <Text position={[0, 0, 0]} fontSize={0.2} color="#cccccc" anchorX="center" anchorY="middle">
         Initializing...
       </Text>
     );
@@ -259,9 +209,7 @@ function applyAnimation(vrm: VRM, animationType: string, progress: number) {
 
     case 'bow':
       const spine = humanoid.getNormalizedBoneNode('spine');
-      if (spine) {
-        spine.rotation.x = Math.sin(t * Math.PI) * 0.5;
-      }
+      if (spine) spine.rotation.x = Math.sin(t * Math.PI) * 0.5;
       break;
 
     case 'dance':
@@ -305,7 +253,6 @@ function applyAnimation(vrm: VRM, animationType: string, progress: number) {
       const leftUpperArmH = humanoid.getNormalizedBoneNode('leftUpperArm');
       const rightUpperArmH = humanoid.getNormalizedBoneNode('rightUpperArm');
       if (leftUpperArmH && rightUpperArmH) {
-        // Make a heart shape with arms
         leftUpperArmH.rotation.z = 0.8;
         leftUpperArmH.rotation.x = -0.5;
         rightUpperArmH.rotation.z = -0.8;
@@ -316,28 +263,20 @@ function applyAnimation(vrm: VRM, animationType: string, progress: number) {
     case 'sad':
       const spineS = humanoid.getNormalizedBoneNode('spine');
       const headS = humanoid.getNormalizedBoneNode('head');
-      if (spineS) {
-        spineS.rotation.x = t * -0.2;
-      }
-      if (headS) {
-        headS.rotation.x = t * 0.3;
-      }
+      if (spineS) spineS.rotation.x = t * -0.2;
+      if (headS) headS.rotation.x = t * 0.3;
       break;
 
     case 'angry':
       const headA = humanoid.getNormalizedBoneNode('head');
-      if (headA) {
-        headA.rotation.y = Math.sin(progress * Math.PI * 8) * 0.1;
-      }
+      if (headA) headA.rotation.y = Math.sin(progress * Math.PI * 8) * 0.1;
       break;
 
     case 'surprised':
       const headSur = humanoid.getNormalizedBoneNode('head');
       const leftUpperArmSur = humanoid.getNormalizedBoneNode('leftUpperArm');
       const rightUpperArmSur = humanoid.getNormalizedBoneNode('rightUpperArm');
-      if (headSur) {
-        headSur.rotation.x = -0.1;
-      }
+      if (headSur) headSur.rotation.x = -0.1;
       if (leftUpperArmSur && rightUpperArmSur) {
         leftUpperArmSur.rotation.z = 0.8;
         rightUpperArmSur.rotation.z = -0.8;
@@ -373,19 +312,12 @@ function applyIdleAnimation(vrm: VRM, time: number) {
   const humanoid = vrm.humanoid;
   if (!humanoid) return;
 
-  // More visible breathing animation
   const spine = humanoid.getNormalizedBoneNode('spine');
   const chest = humanoid.getNormalizedBoneNode('chest');
   
-  if (spine) {
-    spine.rotation.x = Math.sin(time * 0.8) * 0.03;
-  }
-  
-  if (chest) {
-    chest.rotation.x = Math.sin(time * 0.8) * 0.025;
-  }
+  if (spine) spine.rotation.x = Math.sin(time * 0.8) * 0.03;
+  if (chest) chest.rotation.x = Math.sin(time * 0.8) * 0.025;
 
-  // More noticeable head movement
   const head = humanoid.getNormalizedBoneNode('head');
   if (head) {
     head.rotation.y = Math.sin(time * 0.3) * 0.08;
@@ -393,7 +325,6 @@ function applyIdleAnimation(vrm: VRM, time: number) {
     head.rotation.z = Math.sin(time * 0.4) * 0.02;
   }
 
-  // Arms with visible wave motion - slightly raised
   const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
   const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
   
@@ -406,14 +337,12 @@ function applyIdleAnimation(vrm: VRM, time: number) {
     rightUpperArm.rotation.x = Math.sin(time * 0.7 + Math.PI) * 0.03;
   }
 
-  // Gentle body sway
   const hips = humanoid.getNormalizedBoneNode('hips');
   if (hips) {
     hips.position.y = Math.sin(time * 0.5) * 0.01;
     hips.rotation.y = Math.sin(time * 0.4) * 0.02;
   }
 
-  // Occasional blinking
   if (vrm.expressionManager && Math.random() < 0.002) {
     vrm.expressionManager.setValue('blink', 1);
     setTimeout(() => {
@@ -426,7 +355,6 @@ function resetToIdlePose(vrm: VRM) {
   const humanoid = vrm.humanoid;
   if (!humanoid) return;
 
-  // Reset to natural idle pose with arms slightly raised
   const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
   const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
   const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
@@ -467,8 +395,14 @@ export const VTuberScene: React.FC = () => {
   return (
     <div className="w-full h-full bg-gradient-to-b from-purple-900 to-blue-900">
       <Canvas
-        camera={{ position: [0, 1.2, 3], fov: 45 }}
-        gl={{ alpha: true, antialias: true }}
+        camera={{ 
+          position: [0, 0.7, 2.8], 
+          fov: 45
+        }}
+        gl={{ 
+          alpha: true, 
+          antialias: true
+        }}
       >
         <ambientLight intensity={0.9} />
         <directionalLight position={[1, 1, 1]} intensity={0.7} />
@@ -481,10 +415,9 @@ export const VTuberScene: React.FC = () => {
         
         <OrbitControls
           enablePan={false}
-          enableZoom={true}
-          minDistance={1}
-          maxDistance={8}
-          target={[0, 1, 0]}
+          enableZoom={false}
+          enableRotate={false}
+          target={[0, 0.7, 0]}
         />
       </Canvas>
     </div>
