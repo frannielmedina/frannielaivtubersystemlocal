@@ -5,7 +5,6 @@ import * as THREE from 'three';
 import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useStore } from '@/store/useStore';
-import type { LipsyncData, EmotionData } from '@/services/TTSService';
 
 const VRMModel: React.FC<{ 
   modelPath: string;
@@ -21,20 +20,6 @@ const VRMModel: React.FC<{
     duration: number;
   } | null>(null);
   const modelLoadedRef = useRef(false);
-  
-  // Lipsync state
-  const lipsyncRef = useRef<{
-    phonemes: LipsyncData['phonemes'];
-    currentIndex: number;
-    startTime: number;
-  } | null>(null);
-  
-  // Emotion state
-  const emotionRef = useRef<{
-    target: EmotionData;
-    current: number;
-    startTime: number;
-  } | null>(null);
 
   // Blinking state
   const blinkRef = useRef<{
@@ -157,118 +142,10 @@ const VRMModel: React.FC<{
     }
   }, [currentAnimation, vrm]);
 
-  // Handle lipsync from TTS
-  useEffect(() => {
-    const handleLipsync = (data: LipsyncData) => {
-      if (!vrm || !vrm.expressionManager) return;
-      
-      console.log('👄 Starting lipsync animation');
-      lipsyncRef.current = {
-        phonemes: data.phonemes,
-        currentIndex: 0,
-        startTime: Date.now()
-      };
-    };
-
-    // Subscribe to lipsync events from TTSService
-    const store = useStore.getState();
-    if (store.ttsService) {
-      store.ttsService.setLipsyncCallback(handleLipsync);
-    }
-  }, [vrm]);
-
-  // Handle emotion from TTS
-  useEffect(() => {
-    const handleEmotion = (emotion: EmotionData) => {
-      if (!vrm || !vrm.expressionManager) return;
-      
-      console.log('😊 Setting emotion:', emotion.emotion);
-      emotionRef.current = {
-        target: emotion,
-        current: 0,
-        startTime: Date.now()
-      };
-    };
-
-    // Subscribe to emotion events from TTSService
-    const store = useStore.getState();
-    if (store.ttsService) {
-      store.ttsService.setEmotionCallback(handleEmotion);
-    }
-  }, [vrm]);
-
   useFrame((state, delta) => {
     if (!vrm) return;
 
     vrm.update(delta);
-
-    // Handle lipsync
-    if (lipsyncRef.current && vrm.expressionManager) {
-      const elapsed = (Date.now() - lipsyncRef.current.startTime) / 1000;
-      const { phonemes, currentIndex } = lipsyncRef.current;
-      
-      if (currentIndex < phonemes.length) {
-        const currentPhoneme = phonemes[currentIndex];
-        
-        if (elapsed >= currentPhoneme.time) {
-          // Map phoneme to mouth shape
-          let mouthValue = 0;
-          
-          switch (currentPhoneme.phoneme) {
-            case 'aa': mouthValue = 1.0; break;  // Open mouth
-            case 'ee': mouthValue = 0.5; break;  // Slight open
-            case 'oo': mouthValue = 0.7; break;  // Round
-            default: mouthValue = 0.0;           // Closed
-          }
-          
-          // Apply mouth shape
-          vrm.expressionManager.setValue('aa', mouthValue);
-          
-          lipsyncRef.current.currentIndex++;
-        }
-      } else if (currentIndex >= phonemes.length) {
-        // Lipsync finished - close mouth
-        vrm.expressionManager.setValue('aa', 0);
-        lipsyncRef.current = null;
-      }
-    }
-
-    // Handle emotion transitions
-    if (emotionRef.current && vrm.expressionManager) {
-      const elapsed = Date.now() - emotionRef.current.startTime;
-      const transitionDuration = 500; // 500ms smooth transition
-      
-      const progress = Math.min(elapsed / transitionDuration, 1);
-      const targetValue = emotionRef.current.target.intensity;
-      const currentValue = emotionRef.current.current + (targetValue - emotionRef.current.current) * progress;
-      
-      emotionRef.current.current = currentValue;
-      
-      // Map emotion to VRM expression
-      const emotionMap: Record<string, string> = {
-        'happy': 'happy',
-        'sad': 'sad',
-        'angry': 'angry',
-        'surprised': 'surprised',
-        'neutral': 'neutral'
-      };
-      
-      const expressionName = emotionMap[emotionRef.current.target.emotion];
-      if (expressionName) {
-        vrm.expressionManager.setValue(expressionName, currentValue);
-      }
-      
-      // Clear emotion after transition + hold time
-      if (progress >= 1 && elapsed > transitionDuration + 2000) {
-        // Fade out
-        const fadeProgress = Math.min((elapsed - transitionDuration - 2000) / 500, 1);
-        vrm.expressionManager.setValue(expressionName, currentValue * (1 - fadeProgress));
-        
-        if (fadeProgress >= 1) {
-          emotionRef.current = null;
-        }
-      }
-    }
 
     // Handle animations
     if (animationRef.current) {
