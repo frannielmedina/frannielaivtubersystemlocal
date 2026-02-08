@@ -10,6 +10,7 @@ export const ReversiBoard: React.FC = () => {
   const [legalMoves, setLegalMoves] = useState<[number, number][]>([]);
   const [showHint, setShowHint] = useState(false);
   const [showCommands, setShowCommands] = useState(true);
+  const [autoRestartTimer, setAutoRestartTimer] = useState<number | null>(null);
 
   useEffect(() => {
     const newGame = new ReversiGame(gameState.aiColor, async (move) => {
@@ -22,6 +23,31 @@ export const ReversiBoard: React.FC = () => {
     setGame(newGame);
     setLegalMoves(newGame.getLegalMoves(newGame.getCurrentPlayer()));
   }, []);
+
+  // Auto-restart after 10 seconds when game is over
+  useEffect(() => {
+    if (game && game.isGameOver()) {
+      addChatMessage({
+        id: (Date.now() + 100).toString(),
+        username: 'System',
+        message: '🔄 New game starting in 10 seconds...',
+        timestamp: Date.now(),
+        color: '#3b82f6'
+      });
+
+      const timer = window.setTimeout(() => {
+        handleReset();
+      }, 10000);
+
+      setAutoRestartTimer(timer);
+
+      return () => {
+        if (autoRestartTimer) {
+          clearTimeout(autoRestartTimer);
+        }
+      };
+    }
+  }, [game?.isGameOver()]);
 
   // Listen for chat commands
   useEffect(() => {
@@ -138,6 +164,7 @@ export const ReversiBoard: React.FC = () => {
     
     const aiPlayer = gameState.aiColor === 'white' ? 1 : -1;
     
+    // Check if it's player's turn
     if (game.getCurrentPlayer() === aiPlayer) {
       addChatMessage({
         id: Date.now().toString(),
@@ -150,6 +177,20 @@ export const ReversiBoard: React.FC = () => {
       return;
     }
 
+    // Only allow clicks on legal moves
+    const isLegalMove = legalMoves.some(([r, c]) => r === row && c === col);
+    
+    if (!isLegalMove) {
+      addChatMessage({
+        id: Date.now().toString(),
+        username: 'System',
+        message: `❌ Invalid move at ${rowColToChessNotation(row, col)}`,
+        timestamp: Date.now(),
+        color: '#ef4444'
+      });
+      return;
+    }
+
     const move = game.makeMove(row, col);
     
     if (move) {
@@ -158,6 +199,12 @@ export const ReversiBoard: React.FC = () => {
   };
 
   const handleReset = () => {
+    // Clear auto-restart timer if exists
+    if (autoRestartTimer) {
+      clearTimeout(autoRestartTimer);
+      setAutoRestartTimer(null);
+    }
+
     game?.reset();
     if (game) {
       setLegalMoves(game.getLegalMoves(game.getCurrentPlayer()));
@@ -200,27 +247,27 @@ export const ReversiBoard: React.FC = () => {
   const hint = showHint ? game.getHint() : null;
 
   return (
-    <div className="flex flex-col items-center justify-center h-full">
+    <div className="flex flex-col items-center justify-center h-full p-4 overflow-y-auto">
       {/* Header */}
-      <div className="mb-4 flex justify-between w-full items-center">
+      <div className="mb-4 flex justify-between w-full items-center flex-shrink-0">
         <h2 className="text-2xl font-bold text-white">⚪ Reversi/Othello</h2>
         <div className="flex gap-2">
           <button 
             onClick={() => setShowCommands(!showCommands)}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors"
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
           >
             <Info size={16} /> {showCommands ? 'Hide' : 'Show'} Commands
           </button>
           <button 
             onClick={handleHint} 
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors"
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
             disabled={game.isGameOver()}
           >
             <HelpCircle size={16} /> Hint
           </button>
           <button 
             onClick={handleReset} 
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-2 text-white transition-colors"
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
           >
             <RefreshCw size={16} /> New Game
           </button>
@@ -229,13 +276,13 @@ export const ReversiBoard: React.FC = () => {
 
       {/* Commands Panel */}
       {showCommands && (
-        <div className="mb-4 w-full bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <h3 className="text-white font-bold mb-2 flex items-center gap-2">
+        <div className="mb-4 w-full bg-gray-800 rounded-lg p-4 border border-gray-700 flex-shrink-0">
+          <h3 className="text-white font-bold mb-2 flex items-center gap-2 text-sm">
             📋 Available Commands
           </h3>
-          <div className="space-y-2 text-sm">
+          <div className="space-y-2 text-xs">
             <div className="flex items-start gap-2">
-              <code className="bg-gray-900 px-2 py-1 rounded text-green-400">!place [position]</code>
+              <code className="bg-gray-900 px-2 py-1 rounded text-green-400 text-xs">!place [position]</code>
               <span className="text-gray-300">Place a piece (e.g., !place D3)</span>
             </div>
             <div className="text-xs text-gray-500 ml-2">
@@ -252,7 +299,7 @@ export const ReversiBoard: React.FC = () => {
       )}
 
       {/* Score Display */}
-      <div className="mb-4 flex gap-8 text-white">
+      <div className="mb-4 flex gap-8 text-white flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-gray-900 border-2 border-white"></div>
           <span className="font-bold">AI: {score.ai}</span>
@@ -264,7 +311,7 @@ export const ReversiBoard: React.FC = () => {
       </div>
 
       {/* Board */}
-      <div className="grid grid-cols-8 gap-0 border-4 border-gray-700 bg-green-700 mb-4">
+      <div className="grid grid-cols-8 gap-0 border-4 border-gray-700 bg-green-700 mb-4 flex-shrink-0">
         {board.map((row, rowIdx) =>
           row.map((piece, colIdx) => {
             const isLegal = legalMoves.some(([r, c]) => r === rowIdx && c === colIdx);
@@ -297,7 +344,7 @@ export const ReversiBoard: React.FC = () => {
       </div>
 
       {/* Game Status */}
-      <div className="text-white text-center">
+      <div className="text-white text-center flex-shrink-0">
         <p className="text-sm text-gray-400">
           Current Turn: {game.getCurrentPlayer() === 1 ? '⚪ White (You)' : '⚫ Black (AI)'}
         </p>
@@ -308,10 +355,15 @@ export const ReversiBoard: React.FC = () => {
 
       {/* Game Over */}
       {game.isGameOver() && (
-        <div className="mt-4 text-xl font-bold text-yellow-400">
-          {game.getWinner() === 'player' && '🎉 You Won!'}
-          {game.getWinner() === 'ai' && '🤖 AI Wins!'}
-          {game.getWinner() === 'draw' && '🤝 Draw!'}
+        <div className="mt-4 p-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex-shrink-0">
+          <div className="text-2xl font-bold text-white text-center">
+            {game.getWinner() === 'player' && '🎉 You Won!'}
+            {game.getWinner() === 'ai' && '🤖 AI Wins!'}
+            {game.getWinner() === 'draw' && '🤝 Draw!'}
+          </div>
+          <div className="text-sm text-white text-center mt-2">
+            Game will restart in 10 seconds...
+          </div>
         </div>
       )}
     </div>
