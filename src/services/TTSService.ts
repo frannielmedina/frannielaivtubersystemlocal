@@ -3,13 +3,18 @@
 // ========================================
 // src/services/TTSService.ts
 
+export type TTSProvider = 'coqui' | 'elevenlabs' | 'openai' | 'webspeech';
+
 export interface TTSConfig {
   ttsUrl?: string;
   speakerWavUrl?: string;
-  provider?: 'coqui' | 'elevenlabs' | 'openai';
+  provider?: TTSProvider;
   elevenlabsApiKey?: string;
   elevenlabsVoiceId?: string;
   openaiApiKey?: string;
+  voice?: string; // Para webspeech
+  rate?: number;  // Para webspeech
+  pitch?: number; // Para webspeech
 }
 
 export interface QueueItem {
@@ -24,10 +29,13 @@ export class TTSService {
   private currentAudio: HTMLAudioElement | null = null;
   private ttsUrl: string = '';
   private speakerWavUrl: string = '';
-  private provider: 'coqui' | 'elevenlabs' | 'openai' = 'coqui';
+  private provider: TTSProvider = 'coqui';
   private elevenlabsApiKey: string = '';
   private elevenlabsVoiceId: string = '';
   private openaiApiKey: string = '';
+  private voice: string = '';
+  private rate: number = 1;
+  private pitch: number = 1;
   private onAnimationStart?: (animation: string) => void;
   private onAnimationEnd?: () => void;
 
@@ -78,6 +86,21 @@ export class TTSService {
     if (config.openaiApiKey) {
       this.openaiApiKey = config.openaiApiKey;
       console.log('✅ OpenAI API Key configurada');
+    }
+
+    if (config.voice) {
+      this.voice = config.voice;
+      console.log('✅ WebSpeech Voice configurada:', this.voice);
+    }
+
+    if (config.rate !== undefined) {
+      this.rate = config.rate;
+      console.log('✅ WebSpeech Rate configurado:', this.rate);
+    }
+
+    if (config.pitch !== undefined) {
+      this.pitch = config.pitch;
+      console.log('✅ WebSpeech Pitch configurado:', this.pitch);
     }
   }
 
@@ -150,6 +173,9 @@ export class TTSService {
           break;
         case 'openai':
           await this.speakOpenAI(text);
+          break;
+        case 'webspeech':
+          await this.speakWebSpeech(text, language || 'en-US');
           break;
         default:
           console.warn('⚠️ Provider no soportado:', this.provider);
@@ -312,6 +338,52 @@ export class TTSService {
   }
 
   // ============================================
+  // WEB SPEECH API
+  // ============================================
+  
+  private async speakWebSpeech(text: string, language: string = 'en-US'): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('🔊 Calling Web Speech API');
+
+        if (!('speechSynthesis' in window)) {
+          throw new Error('Web Speech API not supported in this browser');
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = language;
+        utterance.rate = this.rate;
+        utterance.pitch = this.pitch;
+
+        // Si se especificó una voz, buscarla
+        if (this.voice) {
+          const voices = window.speechSynthesis.getVoices();
+          const selectedVoice = voices.find(v => v.name === this.voice);
+          if (selectedVoice) {
+            utterance.voice = selectedVoice;
+          }
+        }
+
+        utterance.onend = () => {
+          console.log('✅ Web Speech finished');
+          resolve();
+        };
+
+        utterance.onerror = (error) => {
+          console.error('❌ Web Speech error:', error);
+          reject(error);
+        };
+
+        window.speechSynthesis.speak(utterance);
+
+      } catch (error) {
+        console.error('❌ Web Speech error:', error);
+        reject(error);
+      }
+    });
+  }
+
+  // ============================================
   // REPRODUCIR AUDIO
   // ============================================
   
@@ -348,11 +420,18 @@ export class TTSService {
   // ============================================
   
   stop(): void {
+    // Detener audio HTML
     if (this.currentAudio) {
       this.currentAudio.pause();
       this.currentAudio.currentTime = 0;
       this.currentAudio = null;
     }
+    
+    // Detener Web Speech API
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    
     this.queue = [];
     this.isProcessing = false;
     console.log('🛑 TTS stopped');
