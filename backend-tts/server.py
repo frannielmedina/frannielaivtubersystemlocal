@@ -1,12 +1,9 @@
 """
-Backend TTS Server MEJORADO con Coqui TTS XTTS-v2
-✅ CORS configurado para ngrok y Vercel
-✅ Limpieza automática de tags de animación
-✅ Detección de emociones
-✅ 17 idiomas con auto-detección
+Backend TTS Server - NGROK FREE FIX
+Solución para ngrok Free con advertencia
 """
 
-from flask import Flask, request, send_file, jsonify
+from flask import Flask, request, send_file, jsonify, make_response
 from flask_cors import CORS
 import io
 import os
@@ -37,15 +34,18 @@ except ImportError:
 
 app = Flask(__name__)
 
-# ✅ CORS Configuration - Allow all origins for ngrok compatibility
-CORS(app, resources={
-    r"/api/*": {
-        "origins": "*",  # Allow all origins (needed for ngrok)
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "ngrok-skip-browser-warning"],
-        "expose_headers": ["X-Emotion"]
-    }
-})
+# ✅ NGROK FIX: Disable CORS library and add manual headers
+# This is needed because ngrok Free shows a warning page
+app.config['CORS_HEADERS'] = 'Content-Type'
+
+@app.after_request
+def after_request(response):
+    """Add CORS headers to every response"""
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,ngrok-skip-browser-warning,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Expose-Headers', 'X-Emotion')
+    return response
 
 # Initialize TTS model
 tts = None
@@ -68,28 +68,17 @@ ANIMATION_TAGS = [
 
 
 def clean_text_for_tts(text: str) -> str:
-    """
-    Remove animation tags and extra formatting for TTS
-    """
+    """Remove animation tags and extra formatting for TTS"""
     cleaned = text
-    
-    # Remove all animation tags
     for tag_pattern in ANIMATION_TAGS:
         cleaned = re.sub(tag_pattern, '', cleaned, flags=re.IGNORECASE)
-    
-    # Remove any remaining brackets
     cleaned = re.sub(r'\[.*?\]', '', cleaned)
-    
-    # Clean up whitespace
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
-    
     return cleaned
 
 
 def detect_emotion(text: str) -> dict:
-    """
-    Detect emotion from animation tags before cleaning
-    """
+    """Detect emotion from animation tags before cleaning"""
     emotion_map = {
         '[CELEBRATE]': {'emotion': 'happy', 'intensity': 1.0},
         '[WAVE]': {'emotion': 'happy', 'intensity': 0.7},
@@ -117,29 +106,12 @@ def detect_language(text: str) -> str:
     
     try:
         lang = detect(text)
-        
-        # Map to supported languages
         lang_map = {
-            'es': 'es',
-            'en': 'en',
-            'fr': 'fr',
-            'de': 'de',
-            'it': 'it',
-            'pt': 'pt',
-            'pl': 'pl',
-            'tr': 'tr',
-            'ru': 'ru',
-            'nl': 'nl',
-            'cs': 'cs',
-            'ar': 'ar',
-            'zh-cn': 'zh-cn',
-            'zh': 'zh-cn',
-            'ja': 'ja',
-            'ko': 'ko',
-            'hu': 'hu',
-            'hi': 'hi'
+            'es': 'es', 'en': 'en', 'fr': 'fr', 'de': 'de', 'it': 'it',
+            'pt': 'pt', 'pl': 'pl', 'tr': 'tr', 'ru': 'ru', 'nl': 'nl',
+            'cs': 'cs', 'ar': 'ar', 'zh-cn': 'zh-cn', 'zh': 'zh-cn',
+            'ja': 'ja', 'ko': 'ko', 'hu': 'hu', 'hi': 'hi'
         }
-        
         return lang_map.get(lang, 'en')
     except Exception as e:
         print(f"Language detection error: {e}")
@@ -150,7 +122,6 @@ def preprocess_chinese(text: str) -> str:
     """Add pinyin for better Chinese pronunciation"""
     if not PYPINYIN_AVAILABLE:
         return text
-    
     try:
         pinyin_list = pinyin(text, style=Style.TONE3)
         pinyin_text = ' '.join([p[0] for p in pinyin_list])
@@ -160,21 +131,20 @@ def preprocess_chinese(text: str) -> str:
         return text
 
 
-@app.route('/api/health', methods=['GET'])
+@app.route('/api/health', methods=['GET', 'OPTIONS'])
 def health_check():
     """Check server status"""
+    if request.method == 'OPTIONS':
+        return make_response('', 204)
+    
     return jsonify({
         'status': 'ok',
         'tts_available': COQUI_AVAILABLE,
         'langdetect_available': LANGDETECT_AVAILABLE,
         'pypinyin_available': PYPINYIN_AVAILABLE,
         'model': 'xtts_v2' if COQUI_AVAILABLE else None,
-        'features': {
-            'animation_tag_cleaning': True,
-            'emotion_detection': True,
-            'multilingual': True,
-            'pypinyin': PYPINYIN_AVAILABLE
-        }
+        'cors_enabled': True,
+        'ngrok_compatible': True
     })
 
 
@@ -182,20 +152,11 @@ def health_check():
 def generate_speech():
     """
     Generate TTS audio
-    Body: {
-        "text": "text to synthesize",
-        "voice": "path/to/voice/file.wav" (optional),
-        "speed": 1.0,
-        "language": "es" (optional, auto-detected if not provided)
-    }
+    ✅ Ngrok Free compatible with OPTIONS handling
     """
-    # Handle OPTIONS request for CORS preflight
+    # Handle OPTIONS preflight
     if request.method == 'OPTIONS':
-        response = jsonify({'status': 'ok'})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning')
-        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        return response, 200
+        return make_response('', 204)
     
     if not COQUI_AVAILABLE or tts is None:
         return jsonify({'error': 'TTS not available'}), 503
@@ -238,7 +199,6 @@ def generate_speech():
             tmp_path = tmp_file.name
 
         if voice_path and os.path.exists(voice_path):
-            # Voice cloning
             tts.tts_to_file(
                 text=text,
                 speaker_wav=voice_path,
@@ -247,7 +207,6 @@ def generate_speech():
                 speed=speed
             )
         else:
-            # Default voice
             tts.tts_to_file(
                 text=text,
                 language=language,
@@ -257,18 +216,21 @@ def generate_speech():
 
         print(f"✅ Generated: {tmp_path}")
 
-        # Send file with emotion metadata in headers
-        response = send_file(
-            tmp_path,
-            mimetype='audio/wav',
-            as_attachment=True,
-            download_name='speech.wav'
-        )
+        # Read file and create response
+        with open(tmp_path, 'rb') as f:
+            audio_data = f.read()
         
-        # Add emotion data to response headers
+        # Clean up temp file
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+
+        # Create response with proper headers
+        response = make_response(audio_data)
+        response.headers['Content-Type'] = 'audio/wav'
+        response.headers['Content-Disposition'] = 'attachment; filename=speech.wav'
         response.headers['X-Emotion'] = json.dumps(emotion)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Expose-Headers'] = 'X-Emotion'
         
         return response
 
@@ -279,9 +241,12 @@ def generate_speech():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/detect-language', methods=['POST'])
+@app.route('/api/detect-language', methods=['POST', 'OPTIONS'])
 def detect_lang():
     """Detect language from text"""
+    if request.method == 'OPTIONS':
+        return make_response('', 204)
+    
     if not LANGDETECT_AVAILABLE:
         return jsonify({'error': 'Language detection not available'}), 503
     
@@ -292,7 +257,6 @@ def detect_lang():
         if not text:
             return jsonify({'error': 'Text required'}), 400
         
-        # Clean text first
         cleaned_text = clean_text_for_tts(text)
         lang = detect_language(cleaned_text)
         
@@ -302,32 +266,12 @@ def detect_lang():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/clean-text', methods=['POST'])
-def clean_text_endpoint():
-    """Clean text by removing animation tags"""
-    try:
-        data = request.json
-        text = data.get('text', '')
-        
-        if not text:
-            return jsonify({'error': 'Text required'}), 400
-        
-        cleaned = clean_text_for_tts(text)
-        emotion = detect_emotion(text)
-        
-        return jsonify({
-            'original': text,
-            'cleaned': cleaned,
-            'emotion': emotion
-        })
-    
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/voices', methods=['GET'])
+@app.route('/api/voices', methods=['GET', 'OPTIONS'])
 def list_voices():
     """List available voices and languages"""
+    if request.method == 'OPTIONS':
+        return make_response('', 204)
+    
     if not COQUI_AVAILABLE:
         return jsonify({'error': 'TTS not available'}), 503
 
@@ -346,7 +290,7 @@ def list_voices():
             {'code': 'nl', 'name': 'Dutch'},
             {'code': 'cs', 'name': 'Czech'},
             {'code': 'ar', 'name': 'Arabic'},
-            {'code': 'zh-cn', 'name': 'Chinese (Mandarin)'},
+            {'code': 'zh-cn', 'name': 'Chinese'},
             {'code': 'ja', 'name': 'Japanese'},
             {'code': 'ko', 'name': 'Korean'},
             {'code': 'hu', 'name': 'Hungarian'},
@@ -356,25 +300,21 @@ def list_voices():
 
 
 if __name__ == '__main__':
-    print("\n" + "="*50)
-    print("🎤 TTS Server MEJORADO para Miko AI VTuber")
-    print("="*50)
-    print(f"TTS Available: {'✅ Yes' if COQUI_AVAILABLE else '❌ No'}")
-    print(f"Language Detection: {'✅ Yes' if LANGDETECT_AVAILABLE else '❌ No'}")
-    print(f"Pypinyin: {'✅ Yes' if PYPINYIN_AVAILABLE else '❌ No'}")
-    print("Port: 5000")
-    print("\nEndpoints:")
-    print("  - GET  /api/health            → Server status")
-    print("  - POST /api/tts               → Generate audio (auto-cleans tags)")
-    print("  - POST /api/detect-language   → Detect language")
-    print("  - POST /api/clean-text        → Clean animation tags")
-    print("  - GET  /api/voices            → List voices")
-    print("\nFeatures:")
-    print("  ✅ Automatic animation tag removal")
-    print("  ✅ Emotion detection")
-    print("  ✅ 17 language support")
-    print("  ✅ Pypinyin for Chinese")
-    print("  ✅ CORS enabled for ngrok/Vercel")
-    print("="*50 + "\n")
+    print("\n" + "="*60)
+    print("🎤 TTS Server - NGROK FREE COMPATIBLE")
+    print("="*60)
+    print(f"TTS: {'✅' if COQUI_AVAILABLE else '❌'}")
+    print(f"LangDetect: {'✅' if LANGDETECT_AVAILABLE else '❌'}")
+    print(f"Pypinyin: {'✅' if PYPINYIN_AVAILABLE else '❌'}")
+    print("\n🔧 Configuration:")
+    print("  - CORS: Enabled for all origins")
+    print("  - OPTIONS: Handled with 204 No Content")
+    print("  - Ngrok: Free tier compatible")
+    print("\n💡 Important:")
+    print("  - Copy the ngrok URL EXACTLY as shown")
+    print("  - Don't add trailing slash")
+    print("  - Use HTTPS (ngrok always uses HTTPS)")
+    print("="*60 + "\n")
     
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Run on all interfaces
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
