@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -9,6 +9,7 @@ import { useStore } from '@/store/useStore';
 const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   const [vrm, setVrm] = useState<VRM | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const currentAnimation = useStore(state => state.currentAnimation);
   const animationRef = useRef<{
     type: string;
@@ -25,11 +26,23 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     loader.register((parser) => new VRMLoaderPlugin(parser));
 
     console.log('🎭 Loading VRM model from:', modelPath);
+    setIsLoading(true);
+    setLoadError(null);
 
     loader.load(
       modelPath,
       (gltf) => {
+        console.log('📦 GLTF loaded, extracting VRM...');
         const vrm = gltf.userData.vrm as VRM;
+        
+        if (!vrm) {
+          console.error('❌ No VRM data found in GLTF');
+          setLoadError('Invalid VRM file - no VRM data found');
+          setIsLoading(false);
+          return;
+        }
+
+        console.log('✅ VRM data extracted successfully');
         VRMUtils.removeUnnecessaryJoints(gltf.scene);
         
         vrm.scene.traverse((obj) => {
@@ -42,6 +55,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         // Set initial idle pose - arms slightly raised for visible movement
         const humanoid = vrm.humanoid;
         if (humanoid) {
+          console.log('🦴 Setting up humanoid bones...');
           const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
           const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
           const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
@@ -65,16 +79,30 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         modelLoadedRef.current = true;
         setVrm(vrm);
         setLoadError(null);
-        console.log('✅ VRM model loaded successfully');
+        setIsLoading(false);
+        console.log('✅ VRM model loaded and ready!');
       },
       (progress) => {
         const percent = (progress.loaded / progress.total) * 100;
-        console.log(`📊 Loading model: ${percent.toFixed(0)}%`);
+        if (percent % 10 === 0 || percent === 100) {
+          console.log(`📊 Loading VRM: ${percent.toFixed(0)}%`);
+        }
       },
       (error) => {
         console.error('❌ Error loading VRM:', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to load VRM model';
-        setLoadError(errorMessage);
+        
+        // Check for common errors
+        if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
+          setLoadError(`Model not found at: ${modelPath}`);
+          console.error('💡 Make sure your VRM file is in: public/models/miko.vrm');
+        } else if (errorMessage.includes('CORS')) {
+          setLoadError('CORS error - check file permissions');
+        } else {
+          setLoadError(errorMessage);
+        }
+        
+        setIsLoading(false);
         modelLoadedRef.current = false;
       }
     );
@@ -82,6 +110,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     return () => {
       // Cleanup on unmount
       if (vrm) {
+        console.log('🧹 Cleaning up VRM model...');
         vrm.scene.traverse((obj) => {
           if (obj instanceof THREE.Mesh) {
             obj.geometry?.dispose();
@@ -128,16 +157,74 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     }
   });
 
-  if (loadError) {
+  // Show loading state
+  if (isLoading) {
     return (
-      <mesh>
-        <boxGeometry args={[1, 2, 0.5]} />
-        <meshStandardMaterial color="#ff00ff" />
-      </mesh>
+      <Text
+        position={[0, 0, 0]}
+        fontSize={0.3}
+        color="#ffffff"
+        anchorX="center"
+        anchorY="middle"
+      >
+        Loading VRM Model...
+      </Text>
     );
   }
 
-  if (!vrm) return null;
+  // Show error state
+  if (loadError) {
+    console.error('🚫 VRM Load Error:', loadError);
+    return (
+      <group>
+        <Text
+          position={[0, 0.5, 0]}
+          fontSize={0.2}
+          color="#ff6b6b"
+          anchorX="center"
+          anchorY="middle"
+          maxWidth={3}
+        >
+          Error Loading VRM
+        </Text>
+        <Text
+          position={[0, 0, 0]}
+          fontSize={0.15}
+          color="#ffffff"
+          anchorX="center"
+          anchorY="middle"
+          maxWidth={4}
+        >
+          {loadError}
+        </Text>
+        <Text
+          position={[0, -0.5, 0]}
+          fontSize={0.12}
+          color="#aaaaaa"
+          anchorX="center"
+          anchorY="middle"
+          maxWidth={4}
+        >
+          Check browser console (F12) for details
+        </Text>
+      </group>
+    );
+  }
+
+  // Show waiting state
+  if (!vrm) {
+    return (
+      <Text
+        position={[0, 0, 0]}
+        fontSize={0.2}
+        color="#cccccc"
+        anchorX="center"
+        anchorY="middle"
+      >
+        Initializing...
+      </Text>
+    );
+  }
 
   return <primitive object={vrm.scene} />;
 };
