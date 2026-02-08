@@ -1,6 +1,6 @@
 /**
  * ChessGame - Compatible with Next.js and Vercel
- * Uses dynamic import to avoid SSR issues with chess.js
+ * Fixed dynamic import to handle different chess.js export formats
  */
 
 import type { ChessMove } from '@/types';
@@ -12,9 +12,16 @@ async function loadChess() {
   if (typeof window !== 'undefined' && !Chess) {
     try {
       const chessModule = await import('chess.js');
-      Chess = chessModule.Chess;
+      
+      // Handle different export formats
+      // chess.js@1.0.0-beta uses named export { Chess }
+      // older versions might use default export
+      Chess = chessModule.Chess || chessModule.default || chessModule;
+      
+      console.log('✅ chess.js loaded successfully');
+      console.log('Chess constructor:', typeof Chess);
     } catch (error) {
-      console.error('Failed to load chess.js:', error);
+      console.error('❌ Failed to load chess.js:', error);
     }
   }
   return Chess;
@@ -35,8 +42,22 @@ export class ChessGame {
   private async initialize() {
     const ChessConstructor = await loadChess();
     if (ChessConstructor) {
-      this.game = new ChessConstructor();
-      this.initialized = true;
+      try {
+        // Try to instantiate Chess
+        this.game = new ChessConstructor();
+        this.initialized = true;
+        console.log('✅ Chess game initialized');
+      } catch (error) {
+        console.error('❌ Error instantiating Chess:', error);
+        // If that fails, try calling it as a function
+        try {
+          this.game = ChessConstructor();
+          this.initialized = true;
+          console.log('✅ Chess game initialized (function call)');
+        } catch (error2) {
+          console.error('❌ Error calling Chess as function:', error2);
+        }
+      }
     }
   }
 
@@ -46,11 +67,19 @@ export class ChessGame {
       await new Promise(resolve => setTimeout(resolve, 100));
       attempts++;
     }
+    
+    if (!this.initialized) {
+      console.error('❌ Failed to initialize chess game after 5 seconds');
+    }
+    
     return this.initialized;
   }
 
   makePlayerMove(from: string, to: string): ChessMove | null {
-    if (!this.game) return null;
+    if (!this.game) {
+      console.error('❌ Game not initialized');
+      return null;
+    }
 
     try {
       const move = this.game.move({ from, to, promotion: 'q' });
@@ -69,7 +98,7 @@ export class ChessGame {
       this.onMove(chessMove);
       return chessMove;
     } catch (error) {
-      console.error('Invalid move:', error);
+      console.error('❌ Invalid move:', error);
       return null;
     }
   }
