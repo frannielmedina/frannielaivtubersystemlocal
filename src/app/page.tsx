@@ -13,7 +13,15 @@ import { useStore } from '@/store/useStore';
 import { AIService } from '@/services/AIService';
 import { TTSService } from '@/services/TTSService';
 import { TwitchService } from '@/services/TwitchService';
-import { Settings, MessageCircle, Video, Mic } from 'lucide-react';
+import { Settings, MessageCircle, Video, Mic, X } from 'lucide-react';
+
+interface OverlayMessage {
+  id: string;
+  username: string;
+  message: string;
+  timestamp: number;
+  color?: string;
+}
 
 export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -23,7 +31,10 @@ export default function Home() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [mouseIdleTimeout, setMouseIdleTimeout] = useState<NodeJS.Timeout | null>(null);
   
-  const { config, addChatMessage, setAnimation, setConfig } = useStore();
+  // Overlay messages state
+  const [overlayMessages, setOverlayMessages] = useState<OverlayMessage[]>([]);
+  
+  const { config, addChatMessage, setAnimation, setConfig, chatMessages } = useStore();
   
   const [aiService] = useState(() => new AIService(config.ai));
   const [ttsService] = useState(() => new TTSService(config.tts));
@@ -42,6 +53,33 @@ export default function Home() {
       }
     }
   }, [setConfig]);
+
+  // Handle overlay messages - show last message for 1 minute
+  useEffect(() => {
+    const lastMessage = chatMessages[chatMessages.length - 1];
+    if (!lastMessage) return;
+
+    // Clear previous message immediately when new one arrives
+    setOverlayMessages([]);
+
+    // Add new message
+    const overlayMsg: OverlayMessage = {
+      id: lastMessage.id,
+      username: lastMessage.username,
+      message: lastMessage.message,
+      timestamp: lastMessage.timestamp,
+      color: lastMessage.color,
+    };
+
+    setOverlayMessages([overlayMsg]);
+
+    // Remove after 1 minute
+    const timeout = setTimeout(() => {
+      setOverlayMessages([]);
+    }, 60000);
+
+    return () => clearTimeout(timeout);
+  }, [chatMessages]);
 
   // Handle mouse movement for auto-hide controls (1 minute idle)
   useEffect(() => {
@@ -237,10 +275,12 @@ export default function Home() {
   };
 
   return (
-    <main className="h-screen w-screen overflow-hidden bg-black">
-      <div className="grid grid-cols-12 h-screen">
+    <main className="h-screen w-screen overflow-hidden bg-black relative">
+      <div className={`grid h-screen transition-all duration-300 ${
+        chatOpen ? 'grid-cols-12' : 'grid-cols-9'
+      }`}>
         {/* VTuber Scene - Left Side */}
-        <div className="col-span-5 relative h-screen">
+        <div className={`${chatOpen ? 'col-span-5' : 'col-span-5'} relative h-screen`}>
           <VTuberScene />
           
           {/* Controls Overlay - Auto-hide after 1 minute */}
@@ -267,7 +307,7 @@ export default function Home() {
               onClick={() => setChatOpen(!chatOpen)}
               className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors"
             >
-              <MessageCircle size={24} color="white" />
+              {chatOpen ? <X size={24} color="white" /> : <MessageCircle size={24} color="white" />}
             </button>
             <button
               onClick={() => setSettingsOpen(true)}
@@ -306,20 +346,40 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Game Board - Center */}
-        <div className="col-span-4 bg-gray-900 p-4 h-screen overflow-y-auto">
+        {/* Game Board - Center - Expands when chat is hidden */}
+        <div className={`${chatOpen ? 'col-span-4' : 'col-span-4'} bg-gray-900 p-4 h-screen overflow-y-auto transition-all duration-300`}>
           {renderGame()}
         </div>
 
-        {/* Chat Panel - Right Side - Auto-hide after 1 minute */}
-        <div 
-          className={`col-span-3 h-screen transition-all duration-500 ${
-            chatOpen && controlsVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
-          }`}
-        >
-          <ChatPanel onDirectMessage={handleDirectMessage} />
-        </div>
+        {/* Chat Panel - Right Side - Can be hidden */}
+        {chatOpen && (
+          <div className="col-span-3 h-screen transition-all duration-300">
+            <ChatPanel onDirectMessage={handleDirectMessage} />
+          </div>
+        )}
       </div>
+
+      {/* Message Overlay - Bottom Left Corner */}
+      {overlayMessages.length > 0 && (
+        <div className="fixed bottom-4 left-4 z-40 max-w-md">
+          {overlayMessages.map((msg) => (
+            <div
+              key={msg.id}
+              className="bg-black bg-opacity-80 backdrop-blur-sm px-4 py-3 rounded-lg shadow-2xl animate-fade-in mb-2"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span 
+                  className="font-bold text-sm"
+                  style={{ color: msg.color || '#60a5fa' }}
+                >
+                  {msg.username}
+                </span>
+              </div>
+              <p className="text-white text-sm">{msg.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Settings Modal */}
       <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
@@ -327,7 +387,7 @@ export default function Home() {
       {/* Mouse idle indicator - shown when controls are hidden */}
       {!controlsVisible && (
         <div className="fixed bottom-4 right-4 bg-black bg-opacity-60 px-4 py-2 rounded-full text-white text-xs animate-pulse">
-          💤 Mueve el mouse para mostrar controles
+          💤 Move mouse to show controls
         </div>
       )}
     </main>
