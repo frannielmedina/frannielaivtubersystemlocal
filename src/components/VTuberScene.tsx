@@ -73,7 +73,8 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
       },
       (error) => {
         console.error('❌ Error loading VRM:', error);
-        setLoadError(error.message);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to load VRM model';
+        setLoadError(errorMessage);
         modelLoadedRef.current = false;
       }
     );
