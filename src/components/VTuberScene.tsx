@@ -58,11 +58,11 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
           const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
           
-          // Brazos abajo en posición natural
-          if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.05); // Casi recto
-          if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.05); // Casi recto
-          if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.1); // Ligeramente doblado
-          if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.1); // Ligeramente doblado
+          // Brazos abajo en posición natural (colgando a los lados del cuerpo)
+          if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.3); // Brazo izquierdo hacia abajo
+          if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.3); // Brazo derecho hacia abajo
+          if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.2); // Ligeramente doblado
+          if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.2); // Ligeramente doblado
         }
 
         modelLoadedRef.current = true;
@@ -328,28 +328,28 @@ function applyIdleAnimation(vrm: VRM, time: number) {
     head.rotation.z = Math.sin(time * 0.4) * 0.02;
   }
 
-  // Arms down - natural idle position
+  // Arms down - natural idle position (colgando a los lados)
   const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
   const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
   const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
   const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
   
-  // Brazos abajo con movimiento sutil
+  // Brazos abajo con movimiento sutil de respiración
   if (leftUpperArm) {
-    leftUpperArm.rotation.z = 0.05 + Math.sin(time * 0.6) * 0.02; // Casi recto, solo 0.05 rad
+    leftUpperArm.rotation.z = 0.3 + Math.sin(time * 0.6) * 0.02; // Hacia abajo
     leftUpperArm.rotation.x = Math.sin(time * 0.7) * 0.02;
   }
   if (rightUpperArm) {
-    rightUpperArm.rotation.z = -0.05 + Math.sin(time * 0.6 + Math.PI) * 0.02; // Casi recto
+    rightUpperArm.rotation.z = -0.3 + Math.sin(time * 0.6 + Math.PI) * 0.02; // Hacia abajo
     rightUpperArm.rotation.x = Math.sin(time * 0.7 + Math.PI) * 0.02;
   }
   
   // Lower arms slightly bent
   if (leftLowerArm) {
-    leftLowerArm.rotation.z = 0.1 + Math.sin(time * 0.5) * 0.02;
+    leftLowerArm.rotation.z = 0.2 + Math.sin(time * 0.5) * 0.02;
   }
   if (rightLowerArm) {
-    rightLowerArm.rotation.z = -0.1 + Math.sin(time * 0.5 + Math.PI) * 0.02;
+    rightLowerArm.rotation.z = -0.2 + Math.sin(time * 0.5 + Math.PI) * 0.02;
   }
 
   // Hip sway
@@ -380,11 +380,11 @@ function resetToIdlePose(vrm: VRM) {
   const head = humanoid.getNormalizedBoneNode('head');
   const hips = humanoid.getNormalizedBoneNode('hips');
 
-  // Brazos abajo en posición natural
-  if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.05); // Casi recto
-  if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.05); // Casi recto
-  if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.1); // Ligeramente doblado
-  if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.1); // Ligeramente doblado
+  // Brazos abajo en posición natural (colgando a los lados del cuerpo)
+  if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.3); // Hacia abajo
+  if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.3); // Hacia abajo
+  if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.2); // Ligeramente doblado
+  if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.2); // Ligeramente doblado
   if (spine) spine.rotation.set(0, 0, 0);
   if (head) head.rotation.set(0, 0, 0);
   if (hips) {
