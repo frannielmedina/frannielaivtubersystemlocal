@@ -11,6 +11,7 @@ export const ChessBoard: React.FC = () => {
   const [legalMoves, setLegalMoves] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCommands, setShowCommands] = useState(true);
+  const [autoRestartTimer, setAutoRestartTimer] = useState<number | null>(null);
 
   useEffect(() => {
     const initGame = async () => {
@@ -79,6 +80,31 @@ export const ChessBoard: React.FC = () => {
 
     initGame();
   }, []);
+
+  // Auto-restart after 10 seconds when game is over
+  useEffect(() => {
+    if (game && game.isGameOver()) {
+      addChatMessage({
+        id: (Date.now() + 100).toString(),
+        username: 'System',
+        message: '🔄 New game starting in 10 seconds...',
+        timestamp: Date.now(),
+        color: '#3b82f6'
+      });
+
+      const timer = window.setTimeout(() => {
+        handleReset();
+      }, 10000);
+
+      setAutoRestartTimer(timer);
+
+      return () => {
+        if (autoRestartTimer) {
+          clearTimeout(autoRestartTimer);
+        }
+      };
+    }
+  }, [game?.isGameOver()]);
 
   // Listen for chat commands
   useEffect(() => {
@@ -195,6 +221,12 @@ export const ChessBoard: React.FC = () => {
 
   const handleReset = async () => {
     if (!game) return;
+
+    // Clear auto-restart timer if exists
+    if (autoRestartTimer) {
+      clearTimeout(autoRestartTimer);
+      setAutoRestartTimer(null);
+    }
     
     game.reset();
     setSelectedSquare(null);
@@ -235,20 +267,20 @@ export const ChessBoard: React.FC = () => {
   const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
 
   return (
-    <div className="flex flex-col items-center justify-center h-full p-4">
+    <div className="flex flex-col items-center justify-center h-full p-4 overflow-y-auto">
       {/* Header */}
-      <div className="mb-4 flex justify-between w-full items-center">
+      <div className="mb-4 flex justify-between w-full items-center flex-shrink-0">
         <h2 className="text-2xl font-bold text-white">♟️ Chess</h2>
         <div className="flex gap-2">
           <button 
             onClick={() => setShowCommands(!showCommands)}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors"
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
           >
             <Info size={16} /> {showCommands ? 'Hide' : 'Show'} Commands
           </button>
           <button 
             onClick={handleReset} 
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-2 text-white transition-colors"
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
           >
             <RefreshCw size={16} /> New Game
           </button>
@@ -257,13 +289,13 @@ export const ChessBoard: React.FC = () => {
 
       {/* Commands Panel */}
       {showCommands && (
-        <div className="mb-4 w-full bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <h3 className="text-white font-bold mb-2 flex items-center gap-2">
+        <div className="mb-4 w-full bg-gray-800 rounded-lg p-4 border border-gray-700 flex-shrink-0">
+          <h3 className="text-white font-bold mb-2 flex items-center gap-2 text-sm">
             📋 Available Commands
           </h3>
-          <div className="space-y-2 text-sm">
+          <div className="space-y-2 text-xs">
             <div className="flex items-start gap-2">
-              <code className="bg-gray-900 px-2 py-1 rounded text-green-400">!move [from] to [to]</code>
+              <code className="bg-gray-900 px-2 py-1 rounded text-green-400 text-xs">!move [from] to [to]</code>
               <span className="text-gray-300">Move a piece (e.g., !move E2 to E4)</span>
             </div>
             <div className="text-xs text-gray-500 ml-2">
@@ -279,13 +311,13 @@ export const ChessBoard: React.FC = () => {
 
       {/* Check/Checkmate Alert */}
       {game.isCheck() && !game.isCheckmate() && (
-        <div className="mb-2 px-4 py-2 bg-red-600 text-white rounded animate-pulse">
+        <div className="mb-2 px-4 py-2 bg-red-600 text-white rounded animate-pulse flex-shrink-0">
           ⚠️ CHECK! King is in danger!
         </div>
       )}
 
       {/* Board */}
-      <div className="relative">
+      <div className="relative flex-shrink-0">
         <div className="absolute -left-6 top-0 h-full flex flex-col justify-around text-gray-400 text-sm">
           {ranks.map(rank => (
             <div key={rank} className="h-16 flex items-center">{rank}</div>
@@ -335,7 +367,7 @@ export const ChessBoard: React.FC = () => {
       </div>
 
       {/* Game Status */}
-      <div className="mt-4 text-white text-center">
+      <div className="mt-4 text-white text-center flex-shrink-0">
         <p className="text-sm text-gray-400">
           Turn: {game.turn() === 'w' ? '⚪ White' : '⚫ Black'}
         </p>
@@ -346,7 +378,7 @@ export const ChessBoard: React.FC = () => {
 
       {/* Game Over */}
       {game.isGameOver() && (
-        <div className="mt-4 p-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg">
+        <div className="mt-4 p-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex-shrink-0">
           <div className="text-2xl font-bold text-white text-center">
             {game.isCheckmate() && (
               <>
@@ -355,6 +387,9 @@ export const ChessBoard: React.FC = () => {
               </>
             )}
             {game.isDraw() && '🤝 Draw!'}
+          </div>
+          <div className="text-sm text-white text-center mt-2">
+            Game will restart in 10 seconds...
           </div>
         </div>
       )}
