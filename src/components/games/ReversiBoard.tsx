@@ -50,21 +50,22 @@ export const ReversiBoard: React.FC = () => {
     }
   }, [game?.isGameOver()]);
 
-  // Listen for chat commands
+  // Listen for chat commands - FIXED to work with Twitch
   useEffect(() => {
     if (!game || aiThinking) return;
     
     const lastMessage = chatMessages[chatMessages.length - 1];
     if (!lastMessage || lastMessage.isAI) return;
     
-    const message = lastMessage.message.trim().toLowerCase();
+    const message = lastMessage.message.trim();
     
-    // Reversi command: !place A1 or !place 0,0
+    // Reversi command: !place A1 or !place D3
     const placePattern = /^!place\s+([a-h][1-8])$/i;
     const match = message.match(placePattern);
     
     if (match) {
       const [_, notation] = match;
+      console.log('🎮 Reversi command received:', notation);
       handleCommandPlace(notation);
     }
   }, [chatMessages, game, aiThinking]);
