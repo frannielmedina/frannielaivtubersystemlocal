@@ -14,10 +14,16 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     startTime: number;
     duration: number;
   } | null>(null);
+  const modelLoadedRef = useRef(false);
 
   useEffect(() => {
+    // Only load model once
+    if (modelLoadedRef.current) return;
+    
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
+
+    console.log('🎭 Loading VRM model from:', modelPath);
 
     loader.load(
       modelPath,
@@ -42,7 +48,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
           
           if (leftUpperArm) {
-            leftUpperArm.rotation.set(0, 0, 0.1); // Slight outward angle
+            leftUpperArm.rotation.set(0, 0, 0.1);
           }
           if (rightUpperArm) {
             rightUpperArm.rotation.set(0, 0, -0.1);
@@ -55,19 +61,40 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           }
         }
 
+        modelLoadedRef.current = true;
         setVrm(vrm);
+        console.log('✅ VRM model loaded successfully');
       },
       (progress) => {
-        console.log('Loading model:', (progress.loaded / progress.total) * 100, '%');
+        const percent = (progress.loaded / progress.total) * 100;
+        console.log(`Loading model: ${percent.toFixed(0)}%`);
       },
       (error) => {
-        console.error('Error loading VRM:', error);
+        console.error('❌ Error loading VRM:', error);
+        modelLoadedRef.current = false;
       }
     );
+
+    return () => {
+      // Cleanup on unmount
+      if (vrm) {
+        vrm.scene.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) {
+            obj.geometry?.dispose();
+            if (Array.isArray(obj.material)) {
+              obj.material.forEach(mat => mat.dispose());
+            } else {
+              obj.material?.dispose();
+            }
+          }
+        });
+      }
+    };
   }, [modelPath]);
 
   useEffect(() => {
     if (currentAnimation && vrm) {
+      console.log('🎬 Playing animation:', currentAnimation.name);
       animationRef.current = {
         type: currentAnimation.name,
         startTime: Date.now(),
@@ -88,6 +115,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
       applyAnimation(vrm, animationRef.current.type, progress);
 
       if (progress >= 1) {
+        console.log('✅ Animation complete:', animationRef.current.type);
         animationRef.current = null;
         resetToIdlePose(vrm);
       }
@@ -149,12 +177,23 @@ function applyAnimation(vrm: VRM, animationType: string, progress: number) {
         rightHand.position.z = t * 0.3;
       }
       break;
+
+    case 'thumbsup':
+      const rightUpperArmT = humanoid.getNormalizedBoneNode('rightUpperArm');
+      const rightLowerArmT = humanoid.getNormalizedBoneNode('rightLowerArm');
+      if (rightUpperArmT && rightLowerArmT) {
+        rightUpperArmT.rotation.z = -0.3;
+        rightUpperArmT.rotation.x = t * 0.5;
+        rightLowerArmT.rotation.z = -0.5;
+      }
+      break;
   }
 
   if (vrm.expressionManager) {
     switch (animationType) {
       case 'celebrate':
       case 'wave':
+      case 'thumbsup':
         vrm.expressionManager.setValue('happy', t);
         break;
       case 'sad':
@@ -165,6 +204,9 @@ function applyAnimation(vrm: VRM, animationType: string, progress: number) {
         break;
       case 'surprised':
         vrm.expressionManager.setValue('surprised', t);
+        break;
+      case 'heart':
+        vrm.expressionManager.setValue('happy', t);
         break;
     }
   }
@@ -179,12 +221,10 @@ function applyIdleAnimation(vrm: VRM, time: number) {
   const chest = humanoid.getNormalizedBoneNode('chest');
   
   if (spine) {
-    // Subtle spine movement for breathing
     spine.rotation.x = Math.sin(time * 0.8) * 0.02;
   }
   
   if (chest) {
-    // Chest breathing
     chest.rotation.x = Math.sin(time * 0.8) * 0.015;
   }
 
@@ -226,6 +266,7 @@ function resetToIdlePose(vrm: VRM) {
   const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
   const spine = humanoid.getNormalizedBoneNode('spine');
   const head = humanoid.getNormalizedBoneNode('head');
+  const hips = humanoid.getNormalizedBoneNode('hips');
 
   if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.1);
   if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.1);
@@ -233,6 +274,10 @@ function resetToIdlePose(vrm: VRM) {
   if (rightLowerArm) rightLowerArm.rotation.set(0, 0, 0);
   if (spine) spine.rotation.set(0, 0, 0);
   if (head) head.rotation.set(0, 0, 0);
+  if (hips) {
+    hips.position.set(0, 0, 0);
+    hips.rotation.set(0, 0, 0);
+  }
 
   if (vrm.expressionManager) {
     vrm.expressionManager.setValue('happy', 0);
