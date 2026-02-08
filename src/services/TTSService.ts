@@ -31,8 +31,11 @@ export class TTSService {
   private onAnimationStart?: (animation: string) => void;
   private onAnimationEnd?: () => void;
 
-  constructor() {
+  constructor(config?: TTSConfig) {
     console.log('🎤 TTSService initialized');
+    if (config) {
+      this.updateConfig(config);
+    }
   }
 
   // ============================================
