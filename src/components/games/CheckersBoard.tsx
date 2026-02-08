@@ -20,23 +20,21 @@ export const CheckersBoard: React.FC = () => {
           const winner = newGame.getWinner();
           let message = '';
           
-          if (winner === 'red') {
-            message = gameState.aiColor === 'red' ? 'I win! 🎉' : 'You won! 👏';
+          // FIXED: CheckersGame returns 'player' or 'ai', not 'red'/'black'
+          if (winner === 'ai') {
+            message = 'I win! 🎉';
             setAnimation({ 
               type: 'emote', 
-              name: gameState.aiColor === 'red' ? 'heart' : 'sad', 
+              name: 'heart', 
               duration: 3000 
             });
-          } else if (winner === 'black') {
-            message = gameState.aiColor === 'black' ? 'I win! 🎉' : 'You won! 👏';
+          } else if (winner === 'player') {
+            message = 'You won! 👏 Great game!';
             setAnimation({ 
               type: 'emote', 
-              name: gameState.aiColor === 'black' ? 'heart' : 'sad', 
+              name: 'sad', 
               duration: 3000 
             });
-          } else if (winner === 'draw') {
-            message = 'It\'s a draw! 🤝';
-            setAnimation({ type: 'emote', name: 'surprised', duration: 2000 });
           }
           
           setGameState({ winner });
@@ -104,7 +102,7 @@ export const CheckersBoard: React.FC = () => {
     const from = chessNotationToRowCol(fromNotation);
     const to = chessNotationToRowCol(toNotation);
     
-    const aiPlayer = gameState.aiColor === 'red' ? 'red' : 'black';
+    const aiPlayer = gameState.aiColor === 'white' ? 1 : -1;
     
     if (game.getCurrentPlayer() === aiPlayer) {
       addChatMessage({
@@ -123,7 +121,7 @@ export const CheckersBoard: React.FC = () => {
       addChatMessage({
         id: Date.now().toString(),
         username: 'System',
-        message: `✅ Moved ${fromNotation.toUpperCase()} to ${toNotation.toUpperCase()}${move.isJump ? ' (jump!)' : ''}`,
+        message: `✅ Moved ${fromNotation.toUpperCase()} to ${toNotation.toUpperCase()}${move.captured && move.captured.length > 0 ? ' (jump!)' : ''}`,
         timestamp: Date.now(),
         color: '#10b981'
       });
@@ -147,13 +145,13 @@ export const CheckersBoard: React.FC = () => {
   };
 
   const rowColToChessNotation = (row: number, col: number): string => {
-    return String.fromCharCode('A'.charCodeAt(0) + col) + (8 - row);
+    return String.fromCharCode('a'.charCodeAt(0) + col) + (8 - row);
   };
 
   const handleSquareClick = (row: number, col: number) => {
     if (!game || game.isGameOver()) return;
 
-    const aiPlayer = gameState.aiColor === 'red' ? 'red' : 'black';
+    const aiPlayer = gameState.aiColor === 'white' ? 1 : -1;
     
     if (game.getCurrentPlayer() === aiPlayer) {
       addChatMessage({
@@ -175,20 +173,30 @@ export const CheckersBoard: React.FC = () => {
         setSelectedSquare(null);
         setLegalMoves([]);
       } else {
-        const piece = game.getPieceAt(row, col);
-        if (piece && piece.color === game.getCurrentPlayer()) {
+        const piece = game.getBoard()[row][col];
+        if (piece && Math.sign(piece) === game.getCurrentPlayer()) {
           setSelectedSquare([row, col]);
-          setLegalMoves(game.getLegalMoves(row, col));
+          const moves = game.getLegalMoves(row, col);
+          setLegalMoves(moves.map(m => {
+            const toRow = Math.floor(m.to / 8);
+            const toCol = m.to % 8;
+            return [toRow, toCol] as [number, number];
+          }));
         } else {
           setSelectedSquare(null);
           setLegalMoves([]);
         }
       }
     } else {
-      const piece = game.getPieceAt(row, col);
-      if (piece && piece.color === game.getCurrentPlayer()) {
+      const piece = game.getBoard()[row][col];
+      if (piece && Math.sign(piece) === game.getCurrentPlayer()) {
         setSelectedSquare([row, col]);
-        setLegalMoves(game.getLegalMoves(row, col));
+        const moves = game.getLegalMoves(row, col);
+        setLegalMoves(moves.map(m => {
+          const toRow = Math.floor(m.to / 8);
+          const toCol = m.to % 8;
+          return [toRow, toCol] as [number, number];
+        }));
       }
     }
   };
@@ -318,13 +326,13 @@ export const CheckersBoard: React.FC = () => {
               >
                 {piece && (
                   <div className={`w-12 h-12 rounded-full ${
-                    piece.color === 'red' ? 'bg-red-600' : 'bg-gray-900'
+                    piece > 0 ? 'bg-red-600' : 'bg-gray-900'
                   } border-4 ${
-                    piece.color === 'red' ? 'border-red-400' : 'border-gray-600'
+                    piece > 0 ? 'border-red-400' : 'border-gray-600'
                   } flex items-center justify-center shadow-lg ${
-                    piece.isKing ? 'ring-4 ring-yellow-400' : ''
+                    Math.abs(piece) === 2 ? 'ring-4 ring-yellow-400' : ''
                   }`}>
-                    {piece.isKing && <span className="text-3xl">👑</span>}
+                    {Math.abs(piece) === 2 && <span className="text-3xl">👑</span>}
                   </div>
                 )}
                 {!piece && isLegalMove && !isLight && (
@@ -339,7 +347,7 @@ export const CheckersBoard: React.FC = () => {
       {/* Game Status */}
       <div className="text-white text-center flex-shrink-0">
         <p className="text-sm text-gray-400">
-          Current Turn: {game.getCurrentPlayer() === 'red' ? '🔴 Red' : '⚫ Black'}
+          Current Turn: {game.getCurrentPlayer() === 1 ? '🔴 Red' : '⚫ Black'}
         </p>
       </div>
 
@@ -347,9 +355,8 @@ export const CheckersBoard: React.FC = () => {
       {game.isGameOver() && (
         <div className="mt-4 p-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex-shrink-0">
           <div className="text-2xl font-bold text-white text-center">
-            {game.getWinner() === 'red' && '🔴 Red Wins!'}
-            {game.getWinner() === 'black' && '⚫ Black Wins!'}
-            {game.getWinner() === 'draw' && '🤝 Draw!'}
+            {game.getWinner() === 'player' && '🎉 You Win!'}
+            {game.getWinner() === 'ai' && '🤖 AI Wins!'}
           </div>
           <div className="text-sm text-white text-center mt-2">
             Game will restart in 10 seconds...
