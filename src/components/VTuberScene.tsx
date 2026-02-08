@@ -5,8 +5,12 @@ import * as THREE from 'three';
 import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useStore } from '@/store/useStore';
+import type { LipsyncData, EmotionData } from '@/services/TTSService';
 
-const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
+const VRMModel: React.FC<{ 
+  modelPath: string;
+  onVRMLoaded?: (vrm: VRM) => void;
+}> = ({ modelPath, onVRMLoaded }) => {
   const [vrm, setVrm] = useState<VRM | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -17,6 +21,31 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     duration: number;
   } | null>(null);
   const modelLoadedRef = useRef(false);
+  
+  // Lipsync state
+  const lipsyncRef = useRef<{
+    phonemes: LipsyncData['phonemes'];
+    currentIndex: number;
+    startTime: number;
+  } | null>(null);
+  
+  // Emotion state
+  const emotionRef = useRef<{
+    target: EmotionData;
+    current: number;
+    startTime: number;
+  } | null>(null);
+
+  // Blinking state
+  const blinkRef = useRef<{
+    lastBlink: number;
+    isBlinking: boolean;
+    blinkStart: number;
+  }>({
+    lastBlink: 0,
+    isBlinking: false,
+    blinkStart: 0
+  });
 
   useEffect(() => {
     if (modelLoadedRef.current) return;
@@ -58,17 +87,22 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
           const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
           
-          // Brazos abajo en posición natural (colgando a los lados del cuerpo)
-          if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 1.2); // Brazo izquierdo hacia abajo
-          if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -1.2); // Brazo derecho hacia abajo
-          if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.3); // Ligeramente doblado
-          if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.3); // Ligeramente doblado
+          // Arms down in natural idle position
+          if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 1.2);
+          if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -1.2);
+          if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.3);
+          if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.3);
         }
 
         modelLoadedRef.current = true;
         setVrm(vrm);
         setLoadError(null);
         setIsLoading(false);
+        
+        if (onVRMLoaded) {
+          onVRMLoaded(vrm);
+        }
+        
         console.log('✅ VRM model loaded and ready!');
       },
       (progress) => {
@@ -123,11 +157,120 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     }
   }, [currentAnimation, vrm]);
 
+  // Handle lipsync from TTS
+  useEffect(() => {
+    const handleLipsync = (data: LipsyncData) => {
+      if (!vrm || !vrm.expressionManager) return;
+      
+      console.log('👄 Starting lipsync animation');
+      lipsyncRef.current = {
+        phonemes: data.phonemes,
+        currentIndex: 0,
+        startTime: Date.now()
+      };
+    };
+
+    // Subscribe to lipsync events from TTSService
+    const store = useStore.getState();
+    if (store.ttsService) {
+      store.ttsService.setLipsyncCallback(handleLipsync);
+    }
+  }, [vrm]);
+
+  // Handle emotion from TTS
+  useEffect(() => {
+    const handleEmotion = (emotion: EmotionData) => {
+      if (!vrm || !vrm.expressionManager) return;
+      
+      console.log('😊 Setting emotion:', emotion.emotion);
+      emotionRef.current = {
+        target: emotion,
+        current: 0,
+        startTime: Date.now()
+      };
+    };
+
+    // Subscribe to emotion events from TTSService
+    const store = useStore.getState();
+    if (store.ttsService) {
+      store.ttsService.setEmotionCallback(handleEmotion);
+    }
+  }, [vrm]);
+
   useFrame((state, delta) => {
     if (!vrm) return;
 
     vrm.update(delta);
 
+    // Handle lipsync
+    if (lipsyncRef.current && vrm.expressionManager) {
+      const elapsed = (Date.now() - lipsyncRef.current.startTime) / 1000;
+      const { phonemes, currentIndex } = lipsyncRef.current;
+      
+      if (currentIndex < phonemes.length) {
+        const currentPhoneme = phonemes[currentIndex];
+        
+        if (elapsed >= currentPhoneme.time) {
+          // Map phoneme to mouth shape
+          let mouthValue = 0;
+          
+          switch (currentPhoneme.phoneme) {
+            case 'aa': mouthValue = 1.0; break;  // Open mouth
+            case 'ee': mouthValue = 0.5; break;  // Slight open
+            case 'oo': mouthValue = 0.7; break;  // Round
+            default: mouthValue = 0.0;           // Closed
+          }
+          
+          // Apply mouth shape
+          vrm.expressionManager.setValue('aa', mouthValue);
+          
+          lipsyncRef.current.currentIndex++;
+        }
+      } else if (currentIndex >= phonemes.length) {
+        // Lipsync finished - close mouth
+        vrm.expressionManager.setValue('aa', 0);
+        lipsyncRef.current = null;
+      }
+    }
+
+    // Handle emotion transitions
+    if (emotionRef.current && vrm.expressionManager) {
+      const elapsed = Date.now() - emotionRef.current.startTime;
+      const transitionDuration = 500; // 500ms smooth transition
+      
+      const progress = Math.min(elapsed / transitionDuration, 1);
+      const targetValue = emotionRef.current.target.intensity;
+      const currentValue = emotionRef.current.current + (targetValue - emotionRef.current.current) * progress;
+      
+      emotionRef.current.current = currentValue;
+      
+      // Map emotion to VRM expression
+      const emotionMap: Record<string, string> = {
+        'happy': 'happy',
+        'sad': 'sad',
+        'angry': 'angry',
+        'surprised': 'surprised',
+        'neutral': 'neutral'
+      };
+      
+      const expressionName = emotionMap[emotionRef.current.target.emotion];
+      if (expressionName) {
+        vrm.expressionManager.setValue(expressionName, currentValue);
+      }
+      
+      // Clear emotion after transition + hold time
+      if (progress >= 1 && elapsed > transitionDuration + 2000) {
+        // Fade out
+        const fadeProgress = Math.min((elapsed - transitionDuration - 2000) / 500, 1);
+        vrm.expressionManager.setValue(expressionName, currentValue * (1 - fadeProgress));
+        
+        if (fadeProgress >= 1) {
+          emotionRef.current = null;
+        }
+      }
+    }
+
+    // Handle animations
     if (animationRef.current) {
       const elapsed = Date.now() - animationRef.current.startTime;
       const progress = Math.min(elapsed / animationRef.current.duration, 1);
@@ -142,7 +285,43 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     } else {
       applyIdleAnimation(vrm, state.clock.elapsedTime);
     }
+
+    // Handle blinking
+    handleBlinking(vrm, state.clock.elapsedTime);
   });
+
+  // Blinking function
+  function handleBlinking(vrm: VRM, time: number) {
+    if (!vrm.expressionManager) return;
+    
+    const { lastBlink, isBlinking, blinkStart } = blinkRef.current;
+    
+    if (isBlinking) {
+      const blinkDuration = 0.15; // 150ms blink
+      const elapsed = time - blinkStart;
+      
+      if (elapsed < blinkDuration) {
+        // Blink animation (close and open)
+        const blinkProgress = elapsed / blinkDuration;
+        const blinkValue = Math.sin(blinkProgress * Math.PI); // Smooth open-close-open
+        vrm.expressionManager.setValue('blink', blinkValue);
+      } else {
+        // Blink finished
+        vrm.expressionManager.setValue('blink', 0);
+        blinkRef.current.isBlinking = false;
+      }
+    } else {
+      // Random blinking every 2-5 seconds
+      const timeSinceLastBlink = time - lastBlink;
+      const nextBlinkTime = 2 + Math.random() * 3;
+      
+      if (timeSinceLastBlink > nextBlinkTime) {
+        blinkRef.current.isBlinking = true;
+        blinkRef.current.blinkStart = time;
+        blinkRef.current.lastBlink = time;
+      }
+    }
+  }
 
   if (isLoading) {
     return (
@@ -284,29 +463,6 @@ function applyAnimation(vrm: VRM, animationType: string, progress: number) {
       }
       break;
   }
-
-  if (vrm.expressionManager) {
-    switch (animationType) {
-      case 'celebrate':
-      case 'wave':
-      case 'thumbsup':
-      case 'heart':
-        vrm.expressionManager.setValue('happy', t);
-        break;
-      case 'sad':
-        vrm.expressionManager.setValue('sad', t);
-        break;
-      case 'angry':
-        vrm.expressionManager.setValue('angry', t);
-        break;
-      case 'surprised':
-        vrm.expressionManager.setValue('surprised', t);
-        break;
-      case 'think':
-        vrm.expressionManager.setValue('neutral', t * 0.5);
-        break;
-    }
-  }
 }
 
 function applyIdleAnimation(vrm: VRM, time: number) {
@@ -328,23 +484,21 @@ function applyIdleAnimation(vrm: VRM, time: number) {
     head.rotation.z = Math.sin(time * 0.4) * 0.02;
   }
 
-  // Arms down - natural idle position (colgando a los lados)
+  // Arms down - natural idle position
   const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
   const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
   const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
   const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
   
-  // Brazos abajo con movimiento sutil de respiración
   if (leftUpperArm) {
-    leftUpperArm.rotation.z = 1.2 + Math.sin(time * 0.6) * 0.02; // Hacia abajo
+    leftUpperArm.rotation.z = 1.2 + Math.sin(time * 0.6) * 0.02;
     leftUpperArm.rotation.x = Math.sin(time * 0.7) * 0.02;
   }
   if (rightUpperArm) {
-    rightUpperArm.rotation.z = -1.2 + Math.sin(time * 0.6 + Math.PI) * 0.02; // Hacia abajo
+    rightUpperArm.rotation.z = -1.2 + Math.sin(time * 0.6 + Math.PI) * 0.02;
     rightUpperArm.rotation.x = Math.sin(time * 0.7 + Math.PI) * 0.02;
   }
   
-  // Lower arms slightly bent
   if (leftLowerArm) {
     leftLowerArm.rotation.z = 0.3 + Math.sin(time * 0.5) * 0.02;
   }
@@ -357,14 +511,6 @@ function applyIdleAnimation(vrm: VRM, time: number) {
   if (hips) {
     hips.position.y = Math.sin(time * 0.5) * 0.01;
     hips.rotation.y = Math.sin(time * 0.4) * 0.02;
-  }
-
-  // Blink
-  if (vrm.expressionManager && Math.random() < 0.002) {
-    vrm.expressionManager.setValue('blink', 1);
-    setTimeout(() => {
-      vrm.expressionManager?.setValue('blink', 0);
-    }, 100);
   }
 }
 
@@ -380,11 +526,10 @@ function resetToIdlePose(vrm: VRM) {
   const head = humanoid.getNormalizedBoneNode('head');
   const hips = humanoid.getNormalizedBoneNode('hips');
 
-  // Brazos abajo en posición natural (colgando a los lados del cuerpo)
-  if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 1.2); // Hacia abajo
-  if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -1.2); // Hacia abajo
-  if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.3); // Ligeramente doblado
-  if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.3); // Ligeramente doblado
+  if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 1.2);
+  if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -1.2);
+  if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.3);
+  if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.3);
   if (spine) spine.rotation.set(0, 0, 0);
   if (head) head.rotation.set(0, 0, 0);
   if (hips) {
@@ -392,12 +537,14 @@ function resetToIdlePose(vrm: VRM) {
     hips.rotation.set(0, 0, 0);
   }
 
+  // Reset expressions
   if (vrm.expressionManager) {
     vrm.expressionManager.setValue('happy', 0);
     vrm.expressionManager.setValue('sad', 0);
     vrm.expressionManager.setValue('angry', 0);
     vrm.expressionManager.setValue('surprised', 0);
     vrm.expressionManager.setValue('neutral', 0);
+    vrm.expressionManager.setValue('aa', 0); // Close mouth
   }
 }
 
@@ -417,7 +564,6 @@ export const VTuberScene: React.FC = () => {
   const [hintVisible, setHintVisible] = useState(true);
   const [hintTimeout, setHintTimeout] = useState<NodeJS.Timeout | null>(null);
 
-  // Auto-hide hint after 5 seconds
   useEffect(() => {
     const timeout = setTimeout(() => {
       setHintVisible(false);
@@ -430,7 +576,6 @@ export const VTuberScene: React.FC = () => {
     setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY });
     
-    // Show hint on interaction
     setHintVisible(true);
     if (hintTimeout) clearTimeout(hintTimeout);
     const timeout = setTimeout(() => setHintVisible(false), 3000);
@@ -439,7 +584,6 @@ export const VTuberScene: React.FC = () => {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) {
-      // Show hint on mouse move
       setHintVisible(true);
       if (hintTimeout) clearTimeout(hintTimeout);
       const timeout = setTimeout(() => setHintVisible(false), 3000);
@@ -476,7 +620,6 @@ export const VTuberScene: React.FC = () => {
       }
     });
     
-    // Show hint on wheel
     setHintVisible(true);
     if (hintTimeout) clearTimeout(hintTimeout);
     const timeout = setTimeout(() => setHintVisible(false), 3000);
@@ -520,7 +663,6 @@ export const VTuberScene: React.FC = () => {
         />
       </Canvas>
 
-      {/* Hint text - Auto-hide and reappear on mouse move */}
       <div 
         className={`absolute bottom-4 right-4 bg-black bg-opacity-60 px-3 py-2 rounded text-white text-xs pointer-events-none transition-opacity duration-500 ${
           hintVisible ? 'opacity-100' : 'opacity-0'
