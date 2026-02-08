@@ -17,6 +17,7 @@ export const GamingMode: React.FC = () => {
   const [displayedMessages, setDisplayedMessages] = useState<DisplayedMessage[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
 
   useEffect(() => {
     // Show messages and fade them out after duration
@@ -44,36 +45,77 @@ export const GamingMode: React.FC = () => {
 
   const startCapture = async () => {
     try {
-      const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+      setCaptureError(null);
+      console.log('🎥 Starting screen capture...');
+
+      // Check if getDisplayMedia is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        throw new Error('Screen capture not supported in this browser. Please use Chrome or Edge.');
+      }
+
+      const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           cursor: 'always',
-          displaySurface: 'window'
-        },
+          displaySurface: 'monitor',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          frameRate: { ideal: 60, max: 60 }
+        } as any,
         audio: false
       });
 
+      console.log('✅ Screen capture stream obtained:', stream);
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
-        setIsCapturing(true);
+        videoRef.current.play().then(() => {
+          console.log('✅ Video playing');
+          setIsCapturing(true);
+        }).catch(err => {
+          console.error('❌ Error playing video:', err);
+          throw new Error('Failed to play video stream');
+        });
+      } else {
+        throw new Error('Video element not found');
       }
 
-      // Handle stream end
+      // Handle stream end (user stops sharing)
       stream.getVideoTracks()[0].addEventListener('ended', () => {
+        console.log('🛑 Screen capture stopped by user');
         stopCapture();
       });
+
     } catch (error) {
-      console.error('Error starting screen capture:', error);
-      alert('Screen capture failed. Make sure you grant permission and select a window.');
+      console.error('❌ Error starting screen capture:', error);
+      
+      let errorMessage = 'Screen capture failed. ';
+      
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          errorMessage = 'Screen capture permission denied. Please allow screen sharing and try again.';
+        } else if (error.name === 'NotFoundError') {
+          errorMessage = 'No screen available to capture.';
+        } else if (error.name === 'NotSupportedError') {
+          errorMessage = 'Screen capture not supported. Please use Chrome or Edge browser.';
+        } else {
+          errorMessage += error.message;
+        }
+      }
+      
+      setCaptureError(errorMessage);
     }
   };
 
   const stopCapture = () => {
     if (videoRef.current?.srcObject) {
       const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(track => {
+        track.stop();
+        console.log('🛑 Track stopped:', track.kind);
+      });
       videoRef.current.srcObject = null;
       setIsCapturing(false);
+      console.log('✅ Screen capture stopped');
     }
   };
 
@@ -88,25 +130,44 @@ export const GamingMode: React.FC = () => {
       <div className="absolute inset-0">
         {!isCapturing ? (
           <div className="w-full h-full flex items-center justify-center bg-gray-900">
-            <div className="text-center">
+            <div className="text-center max-w-md px-4">
               <Monitor size={64} className="text-gray-600 mx-auto mb-4" />
               <h2 className="text-2xl font-bold text-white mb-2">No Screen Capture</h2>
-              <p className="text-gray-400 mb-4">Click "Start Capture" to share your game screen</p>
+              <p className="text-gray-400 mb-4">
+                Click "Start Capture" to share your game screen, application, or entire screen
+              </p>
+              {captureError && (
+                <div className="mb-4 p-3 bg-red-900 bg-opacity-50 border border-red-600 rounded text-red-200 text-sm">
+                  ⚠️ {captureError}
+                </div>
+              )}
               <button
                 onClick={startCapture}
-                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded text-white font-semibold"
+                className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded text-white font-semibold transition-colors"
               >
+                <Monitor size={20} className="inline mr-2" />
                 Start Screen Capture
               </button>
+              <div className="mt-4 text-xs text-gray-500">
+                <p>💡 Make sure to:</p>
+                <p>• Use Chrome or Edge browser</p>
+                <p>• Allow screen sharing permission</p>
+                <p>• Select the window/screen you want to capture</p>
+              </div>
             </div>
           </div>
         ) : (
           <video
             ref={videoRef}
-            className="w-full h-full object-contain"
+            className="w-full h-full object-contain bg-black"
             autoPlay
             playsInline
             muted
+            style={{
+              objectFit: 'contain',
+              width: '100%',
+              height: '100%'
+            }}
           />
         )}
       </div>
@@ -202,13 +263,18 @@ export const GamingMode: React.FC = () => {
         </button>
       </div>
 
-      {/* Info */}
-      <div className="absolute top-1/2 left-4 transform -translate-y-1/2 bg-black bg-opacity-60 p-4 rounded max-w-xs">
-        <h2 className="text-xl font-bold text-white mb-2">🎮 Gaming Mode</h2>
-        <p className="text-gray-300 text-sm">
-          Stream your game with Miko in the corner! Chat messages appear as overlays.
-        </p>
-      </div>
+      {/* Status Info */}
+      {isCapturing && (
+        <div className="absolute top-1/2 left-4 transform -translate-y-1/2 bg-black bg-opacity-60 p-4 rounded max-w-xs">
+          <h2 className="text-xl font-bold text-white mb-2">🎮 Gaming Mode Active</h2>
+          <p className="text-gray-300 text-sm">
+            ✅ Screen capture active
+          </p>
+          <p className="text-gray-400 text-xs mt-2">
+            Chat messages appear as overlays and Miko is ready to interact!
+          </p>
+        </div>
+      )}
     </div>
   );
 };
