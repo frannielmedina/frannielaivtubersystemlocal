@@ -172,6 +172,7 @@ export class ChessGame {
     return this.game?.isDraw() || false;
   }
 
+  // FIXED: Return type matches what ChessBoard expects
   getWinner(): 'white' | 'black' | 'draw' | null {
     if (!this.game || !this.isGameOver()) return null;
     if (this.isDraw()) return 'draw';
