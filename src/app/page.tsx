@@ -44,29 +44,22 @@ export default function Home() {
   // Handle mouse movement for auto-hide controls
   useEffect(() => {
     const handleMouseMove = () => {
-      // Show controls
       setControlsVisible(true);
       
-      // Clear existing timeout
       if (mouseIdleTimeout) {
         clearTimeout(mouseIdleTimeout);
       }
       
-      // Set new timeout to hide controls after 60 seconds (1 minute)
       const timeout = setTimeout(() => {
         setControlsVisible(false);
-      }, 60000); // 60000ms = 1 minute
+      }, 60000);
       
       setMouseIdleTimeout(timeout);
     };
 
-    // Add event listener
     window.addEventListener('mousemove', handleMouseMove);
-    
-    // Initial timeout
     handleMouseMove();
     
-    // Cleanup
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       if (mouseIdleTimeout) {
@@ -81,13 +74,11 @@ export default function Home() {
     aiService.updateConfig(config.ai);
     ttsService.updateConfig(config.tts);
     
-    // Only attempt Twitch connection if enabled AND channel is properly set
     const shouldConnect = config.twitch.enabled && 
                          config.twitch.channel && 
                          config.twitch.channel.trim() !== '';
     
     if (shouldConnect) {
-      // Update Twitch config first
       twitchService.updateConfig(config.twitch);
       
       if (!twitchService.isConnected()) {
@@ -104,7 +95,6 @@ export default function Home() {
         });
       }
     } else {
-      // Disconnect if Twitch is disabled or no channel set
       if (twitchService.isConnected()) {
         console.log('🔌 Desconectando de Twitch...');
         twitchService.disconnect();
@@ -135,7 +125,6 @@ export default function Home() {
   const handleDirectMessage = async (messageText: string) => {
     console.log('💬 Mensaje directo recibido:', messageText);
     
-    // Add user message
     addChatMessage({
       id: Date.now().toString(),
       username: 'You',
@@ -187,13 +176,11 @@ export default function Home() {
         color: '#9333ea',
       });
 
-      // Speak response if TTS enabled
       if (config.tts.enabled) {
         console.log('🔊 Hablando respuesta...');
         await ttsService.speak(response);
       }
 
-      // Random emote
       const emotes = ['wave', 'celebrate', 'think', 'heart'];
       const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
       setAnimation({
@@ -222,7 +209,6 @@ export default function Home() {
 
   const gameState = useStore((state: any) => state.gameState);
 
-  // Render modes
   if (config.appMode === 'collab') {
     return <CollabMode />;
   }
@@ -250,12 +236,12 @@ export default function Home() {
 
   return (
     <main className="h-screen w-screen overflow-hidden bg-black">
-      <div className="grid grid-cols-12 h-full">
+      <div className="grid grid-cols-12 h-screen">
         {/* VTuber Scene - Left Side */}
-        <div className="col-span-5 relative">
+        <div className="col-span-5 relative h-screen">
           <VTuberScene />
           
-          {/* Controls Overlay - Auto-hide after 1 minute */}
+          {/* Controls Overlay - Auto-hide */}
           <div 
             className={`absolute top-4 right-4 flex gap-2 transition-opacity duration-500 ${
               controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -289,7 +275,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* VTuber Info - Auto-hide after 1 minute */}
+          {/* VTuber Info - Auto-hide */}
           <div 
             className={`absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg p-4 transition-opacity duration-500 ${
               controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -319,12 +305,12 @@ export default function Home() {
         </div>
 
         {/* Game Board - Center */}
-        <div className="col-span-4 bg-gray-900 p-4">
+        <div className="col-span-4 bg-gray-900 p-4 h-screen overflow-y-auto">
           {renderGame()}
         </div>
 
         {/* Chat Panel - Right Side */}
-        <div className={`col-span-3 transition-all ${chatOpen ? '' : 'hidden'}`}>
+        <div className={`col-span-3 h-screen transition-all ${chatOpen ? '' : 'hidden'}`}>
           <ChatPanel onDirectMessage={handleDirectMessage} />
         </div>
       </div>
