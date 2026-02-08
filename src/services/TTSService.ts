@@ -232,7 +232,10 @@ export class TTSService {
   }
 
   private async speakCoqui(text: string): Promise<void> {
-    const url = this.config.colabUrl || 'http://localhost:5000';
+    // ✅ FIXED: Clean URL - remove trailing slashes
+    let url = this.config.colabUrl || 'http://localhost:5000';
+    url = url.replace(/\/+$/, ''); // Remove all trailing slashes
+    
     const useClone = this.config.useClone;
     const voicePath = this.config.cloneVoicePath;
 
@@ -249,14 +252,29 @@ export class TTSService {
       body.detect_language = true;
     }
 
+    // ✅ FIXED: Build headers with Ngrok bypass
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add Ngrok bypass header if URL contains ngrok
+    if (url.includes('ngrok')) {
+      console.log('🔧 Adding Ngrok bypass header');
+      headers['ngrok-skip-browser-warning'] = 'true';
+    }
+
+    console.log('🔊 Calling Coqui TTS:', `${url}/api/tts`);
+    console.log('📤 Headers:', headers);
+
     const response = await fetch(`${url}/api/tts`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify(body)
     });
 
     if (!response.ok) {
       const error = await response.text();
+      console.error('❌ Coqui TTS error:', response.status, error);
       throw new Error(`Coqui TTS error: ${response.status} - ${error}`);
     }
 
