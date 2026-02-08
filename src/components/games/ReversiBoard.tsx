@@ -11,6 +11,7 @@ export const ReversiBoard: React.FC = () => {
   const [showHint, setShowHint] = useState(false);
   const [showCommands, setShowCommands] = useState(true);
   const [autoRestartTimer, setAutoRestartTimer] = useState<number | null>(null);
+  const [aiThinking, setAiThinking] = useState(false);
 
   useEffect(() => {
     const newGame = new ReversiGame(gameState.aiColor, async (move) => {
@@ -51,7 +52,7 @@ export const ReversiBoard: React.FC = () => {
 
   // Listen for chat commands
   useEffect(() => {
-    if (!game) return;
+    if (!game || aiThinking) return;
     
     const lastMessage = chatMessages[chatMessages.length - 1];
     if (!lastMessage || lastMessage.isAI) return;
@@ -66,10 +67,10 @@ export const ReversiBoard: React.FC = () => {
       const [_, notation] = match;
       handleCommandPlace(notation);
     }
-  }, [chatMessages, game]);
+  }, [chatMessages, game, aiThinking]);
 
   const handleCommandPlace = (notation: string) => {
-    if (!game) return;
+    if (!game || aiThinking) return;
     
     const { row, col } = chessNotationToRowCol(notation);
     
@@ -119,48 +120,56 @@ export const ReversiBoard: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!game || game.isGameOver()) return;
+    if (!game || game.isGameOver() || aiThinking) return;
     
     const aiPlayer = gameState.aiColor === 'white' ? 1 : -1;
     
     if (game.getCurrentPlayer() === aiPlayer) {
+      setAiThinking(true);
+      
       setTimeout(async () => {
-        await game.makeAIMove();
-        
-        const winner = game.getWinner();
-        if (winner) {
-          const score = game.getScore();
-          let message = '';
+        try {
+          await game.makeAIMove();
           
-          if (winner === 'ai') {
-            message = `I win! Final score: AI ${score.ai} - You ${score.player} 🎉`;
-            setAnimation({ type: 'emote', name: 'heart', duration: 3000 });
-          } else if (winner === 'player') {
-            message = `You won! Final score: You ${score.player} - AI ${score.ai} 👏`;
-            setAnimation({ type: 'emote', name: 'sad', duration: 2000 });
-          } else {
-            message = `It's a draw! ${score.player} - ${score.ai} 🤝`;
-            setAnimation({ type: 'emote', name: 'surprised', duration: 2000 });
+          const winner = game.getWinner();
+          if (winner) {
+            const score = game.getScore();
+            let message = '';
+            
+            if (winner === 'ai') {
+              message = `I win! Final score: AI ${score.ai} - You ${score.player} 🎉`;
+              setAnimation({ type: 'emote', name: 'heart', duration: 3000 });
+            } else if (winner === 'player') {
+              message = `You won! Final score: You ${score.player} - AI ${score.ai} 👏`;
+              setAnimation({ type: 'emote', name: 'sad', duration: 2000 });
+            } else {
+              message = `It's a draw! ${score.player} - ${score.ai} 🤝`;
+              setAnimation({ type: 'emote', name: 'surprised', duration: 2000 });
+            }
+            
+            setGameState({ winner });
+            addChatMessage({
+              id: Date.now().toString(),
+              username: 'Miko',
+              message,
+              timestamp: Date.now(),
+              isAI: true,
+              color: '#9333ea'
+            });
           }
           
-          setGameState({ winner });
-          addChatMessage({
-            id: Date.now().toString(),
-            username: 'Miko',
-            message,
-            timestamp: Date.now(),
-            isAI: true,
-            color: '#9333ea'
-          });
+          setLegalMoves(game.getLegalMoves(game.getCurrentPlayer()));
+        } catch (error) {
+          console.error('Error in AI move:', error);
+        } finally {
+          setAiThinking(false);
         }
-        
-        setLegalMoves(game.getLegalMoves(game.getCurrentPlayer()));
       }, 800);
     }
-  }, [game, gameState]);
+  }, [game?.getCurrentPlayer(), game?.isGameOver(), aiThinking]);
 
   const handleSquareClick = (row: number, col: number) => {
-    if (!game || game.isGameOver()) return;
+    if (!game || game.isGameOver() || aiThinking) return;
     
     const aiPlayer = gameState.aiColor === 'white' ? 1 : -1;
     
@@ -205,6 +214,7 @@ export const ReversiBoard: React.FC = () => {
       setAutoRestartTimer(null);
     }
 
+    setAiThinking(false);
     game?.reset();
     if (game) {
       setLegalMoves(game.getLegalMoves(game.getCurrentPlayer()));
@@ -245,6 +255,8 @@ export const ReversiBoard: React.FC = () => {
   const board = game.getBoard();
   const score = game.getScore();
   const hint = showHint ? game.getHint() : null;
+  const currentPlayer = game.getCurrentPlayer();
+  const aiPlayer = gameState.aiColor === 'white' ? 1 : -1;
 
   return (
     <div className="flex flex-col items-center justify-center h-full p-4 overflow-y-auto">
@@ -261,7 +273,7 @@ export const ReversiBoard: React.FC = () => {
           <button 
             onClick={handleHint} 
             className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
-            disabled={game.isGameOver()}
+            disabled={game.isGameOver() || aiThinking}
           >
             <HelpCircle size={16} /> Hint
           </button>
@@ -298,6 +310,16 @@ export const ReversiBoard: React.FC = () => {
         </div>
       )}
 
+      {/* AI Thinking Indicator */}
+      {aiThinking && (
+        <div className="mb-4 w-full bg-purple-900 bg-opacity-50 rounded-lg p-3 border border-purple-600 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+            <span className="text-white font-semibold">AI is thinking...</span>
+          </div>
+        </div>
+      )}
+
       {/* Score Display */}
       <div className="mb-4 flex gap-8 text-white flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -322,7 +344,7 @@ export const ReversiBoard: React.FC = () => {
                 key={`${rowIdx}-${colIdx}`}
                 onClick={() => handleSquareClick(rowIdx, colIdx)}
                 className={`w-16 h-16 flex items-center justify-center cursor-pointer transition-all border border-green-800 ${
-                  isLegal ? 'hover:bg-green-600' : 'hover:bg-green-750'
+                  isLegal && !aiThinking ? 'hover:bg-green-600' : 'hover:bg-green-750'
                 } ${isHint ? 'ring-4 ring-yellow-400 ring-inset animate-pulse' : ''}`}
               >
                 {piece !== null && (
@@ -334,7 +356,7 @@ export const ReversiBoard: React.FC = () => {
                     } shadow-lg transition-all duration-300 animate-fade-in`}
                   />
                 )}
-                {piece === null && isLegal && (
+                {piece === null && isLegal && !aiThinking && (
                   <div className="w-3 h-3 rounded-full bg-green-400 opacity-70" />
                 )}
               </div>
@@ -346,9 +368,10 @@ export const ReversiBoard: React.FC = () => {
       {/* Game Status */}
       <div className="text-white text-center flex-shrink-0">
         <p className="text-sm text-gray-400">
-          Current Turn: {game.getCurrentPlayer() === 1 ? '⚪ White (You)' : '⚫ Black (AI)'}
+          Current Turn: {currentPlayer === 1 ? '⚪ White (You)' : '⚫ Black (AI)'}
+          {aiThinking && ' - AI is thinking...'}
         </p>
-        {legalMoves.length === 0 && !game.isGameOver() && (
+        {legalMoves.length === 0 && !game.isGameOver() && !aiThinking && (
           <p className="text-yellow-400 mt-2">No legal moves - turn passes</p>
         )}
       </div>
