@@ -17,30 +17,35 @@ export const ChessBoard: React.FC = () => {
     const newGame = new ChessGame(gameState.aiColor, async (move) => {
       setTimeout(() => {
         if (newGame.isGameOver()) {
-          const winner = newGame.getWinner();
+          const chessWinner = newGame.getWinner();
           let message = '';
           
-          // FIXED: Handle correct winner types
-          if (winner === 'white') {
+          // Map chess winner ('white'/'black'/'draw') to GameState winner ('player'/'ai'/'draw')
+          let gameStateWinner: 'player' | 'ai' | 'draw' | null = null;
+          
+          if (chessWinner === 'white') {
+            gameStateWinner = gameState.aiColor === 'white' ? 'ai' : 'player';
             message = gameState.aiColor === 'white' ? 'Checkmate! I win! 👑' : 'Checkmate! You won! 🎉';
             setAnimation({ 
               type: 'emote', 
               name: gameState.aiColor === 'white' ? 'heart' : 'sad', 
               duration: 3000 
             });
-          } else if (winner === 'black') {
+          } else if (chessWinner === 'black') {
+            gameStateWinner = gameState.aiColor === 'black' ? 'ai' : 'player';
             message = gameState.aiColor === 'black' ? 'Checkmate! I win! 👑' : 'Checkmate! You won! 🎉';
             setAnimation({ 
               type: 'emote', 
               name: gameState.aiColor === 'black' ? 'heart' : 'sad', 
               duration: 3000 
             });
-          } else if (winner === 'draw') {
+          } else if (chessWinner === 'draw') {
+            gameStateWinner = 'draw';
             message = 'Stalemate! It\'s a draw! 🤝';
             setAnimation({ type: 'emote', name: 'surprised', duration: 2000 });
           }
           
-          setGameState({ winner });
+          setGameState({ winner: gameStateWinner });
           addChatMessage({
             id: Date.now().toString(),
             username: 'Miko',
