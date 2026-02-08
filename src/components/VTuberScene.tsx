@@ -58,10 +58,11 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
           const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
           
-          if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.3);
-          if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.3);
-          if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.1);
-          if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.1);
+          // Brazos abajo en posición natural
+          if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.05); // Casi recto
+          if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.05); // Casi recto
+          if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.1); // Ligeramente doblado
+          if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.1); // Ligeramente doblado
         }
 
         modelLoadedRef.current = true;
@@ -312,12 +313,14 @@ function applyIdleAnimation(vrm: VRM, time: number) {
   const humanoid = vrm.humanoid;
   if (!humanoid) return;
 
+  // Breathing animation
   const spine = humanoid.getNormalizedBoneNode('spine');
   const chest = humanoid.getNormalizedBoneNode('chest');
   
   if (spine) spine.rotation.x = Math.sin(time * 0.8) * 0.03;
   if (chest) chest.rotation.x = Math.sin(time * 0.8) * 0.025;
 
+  // Head movement
   const head = humanoid.getNormalizedBoneNode('head');
   if (head) {
     head.rotation.y = Math.sin(time * 0.3) * 0.08;
@@ -325,24 +328,38 @@ function applyIdleAnimation(vrm: VRM, time: number) {
     head.rotation.z = Math.sin(time * 0.4) * 0.02;
   }
 
+  // Arms down - natural idle position
   const leftUpperArm = humanoid.getNormalizedBoneNode('leftUpperArm');
   const rightUpperArm = humanoid.getNormalizedBoneNode('rightUpperArm');
+  const leftLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
+  const rightLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
   
+  // Brazos abajo con movimiento sutil
   if (leftUpperArm) {
-    leftUpperArm.rotation.z = 0.3 + Math.sin(time * 0.6) * 0.05;
-    leftUpperArm.rotation.x = Math.sin(time * 0.7) * 0.03;
+    leftUpperArm.rotation.z = 0.05 + Math.sin(time * 0.6) * 0.02; // Casi recto, solo 0.05 rad
+    leftUpperArm.rotation.x = Math.sin(time * 0.7) * 0.02;
   }
   if (rightUpperArm) {
-    rightUpperArm.rotation.z = -0.3 + Math.sin(time * 0.6 + Math.PI) * 0.05;
-    rightUpperArm.rotation.x = Math.sin(time * 0.7 + Math.PI) * 0.03;
+    rightUpperArm.rotation.z = -0.05 + Math.sin(time * 0.6 + Math.PI) * 0.02; // Casi recto
+    rightUpperArm.rotation.x = Math.sin(time * 0.7 + Math.PI) * 0.02;
+  }
+  
+  // Lower arms slightly bent
+  if (leftLowerArm) {
+    leftLowerArm.rotation.z = 0.1 + Math.sin(time * 0.5) * 0.02;
+  }
+  if (rightLowerArm) {
+    rightLowerArm.rotation.z = -0.1 + Math.sin(time * 0.5 + Math.PI) * 0.02;
   }
 
+  // Hip sway
   const hips = humanoid.getNormalizedBoneNode('hips');
   if (hips) {
     hips.position.y = Math.sin(time * 0.5) * 0.01;
     hips.rotation.y = Math.sin(time * 0.4) * 0.02;
   }
 
+  // Blink
   if (vrm.expressionManager && Math.random() < 0.002) {
     vrm.expressionManager.setValue('blink', 1);
     setTimeout(() => {
@@ -363,10 +380,11 @@ function resetToIdlePose(vrm: VRM) {
   const head = humanoid.getNormalizedBoneNode('head');
   const hips = humanoid.getNormalizedBoneNode('hips');
 
-  if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.3);
-  if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.3);
-  if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.1);
-  if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.1);
+  // Brazos abajo en posición natural
+  if (leftUpperArm) leftUpperArm.rotation.set(0, 0, 0.05); // Casi recto
+  if (rightUpperArm) rightUpperArm.rotation.set(0, 0, -0.05); // Casi recto
+  if (leftLowerArm) leftLowerArm.rotation.set(0, 0, 0.1); // Ligeramente doblado
+  if (rightLowerArm) rightLowerArm.rotation.set(0, 0, -0.1); // Ligeramente doblado
   if (spine) spine.rotation.set(0, 0, 0);
   if (head) head.rotation.set(0, 0, 0);
   if (hips) {
