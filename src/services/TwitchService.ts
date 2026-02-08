@@ -74,10 +74,15 @@ export class TwitchService {
     // Ignore own messages
     if (self) return;
 
-    // Ignore messages starting with ! or containing @
-    if (message.startsWith('!') || message.includes('@')) {
-      console.log('🚫 Mensaje ignorado:', message);
-      return;
+    // FIXED: Allow game commands (!move, !place) but ignore other ! commands
+    const isGameCommand = this.isGameCommand(message);
+    
+    if (!isGameCommand) {
+      // Ignore non-game commands starting with ! or containing @
+      if (message.startsWith('!') || message.includes('@')) {
+        console.log('🚫 Non-game command ignored:', message);
+        return;
+      }
     }
 
     const twitchMessage: TwitchMessage = {
@@ -91,6 +96,27 @@ export class TwitchService {
     if (this.messageCallback) {
       this.messageCallback(twitchMessage);
     }
+  }
+
+  /**
+   * Check if message is a valid game command
+   */
+  private isGameCommand(message: string): boolean {
+    const msg = message.trim().toLowerCase();
+    
+    // Chess commands: !move E2 to E4
+    if (/^!move\s+[a-h][1-8]\s+to\s+[a-h][1-8]$/i.test(msg)) {
+      console.log('✅ Chess/Checkers command detected:', message);
+      return true;
+    }
+    
+    // Reversi commands: !place D3
+    if (/^!place\s+[a-h][1-8]$/i.test(msg)) {
+      console.log('✅ Reversi command detected:', message);
+      return true;
+    }
+    
+    return false;
   }
 
   async sendMessage(message: string): Promise<void> {
