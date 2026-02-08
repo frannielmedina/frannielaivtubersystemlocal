@@ -10,6 +10,7 @@ export const CheckersBoard: React.FC = () => {
   const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
   const [legalMoves, setLegalMoves] = useState<number[]>([]);
   const [showCommands, setShowCommands] = useState(true);
+  const [autoRestartTimer, setAutoRestartTimer] = useState<number | null>(null);
 
   useEffect(() => {
     const newGame = new CheckersGame(gameState.aiColor === 'white' ? 'red' : 'black', async (move) => {
@@ -47,6 +48,31 @@ export const CheckersBoard: React.FC = () => {
     });
     setGame(newGame);
   }, []);
+
+  // Auto-restart after 10 seconds when game is over
+  useEffect(() => {
+    if (game && game.isGameOver()) {
+      addChatMessage({
+        id: (Date.now() + 100).toString(),
+        username: 'System',
+        message: '🔄 New game starting in 10 seconds...',
+        timestamp: Date.now(),
+        color: '#3b82f6'
+      });
+
+      const timer = window.setTimeout(() => {
+        handleReset();
+      }, 10000);
+
+      setAutoRestartTimer(timer);
+
+      return () => {
+        if (autoRestartTimer) {
+          clearTimeout(autoRestartTimer);
+        }
+      };
+    }
+  }, [game?.isGameOver()]);
 
   // Listen for chat commands
   useEffect(() => {
@@ -172,6 +198,7 @@ export const CheckersBoard: React.FC = () => {
         setSelectedPiece(null);
         setLegalMoves([]);
       } else if (piece && Math.sign(piece) === currentPlayer) {
+        // Select new piece if clicked on own piece
         setSelectedPiece(index);
         setLegalMoves(game.getLegalMoves(index).map(m => m.to));
       } else {
@@ -185,6 +212,12 @@ export const CheckersBoard: React.FC = () => {
   };
 
   const handleReset = () => {
+    // Clear auto-restart timer if exists
+    if (autoRestartTimer) {
+      clearTimeout(autoRestartTimer);
+      setAutoRestartTimer(null);
+    }
+
     game?.reset();
     setSelectedPiece(null);
     setLegalMoves([]);
@@ -205,20 +238,20 @@ export const CheckersBoard: React.FC = () => {
   const board = game.getBoard();
 
   return (
-    <div className="flex flex-col items-center justify-center h-full">
+    <div className="flex flex-col items-center justify-center h-full p-4 overflow-y-auto">
       {/* Header */}
-      <div className="mb-4 flex justify-between w-full items-center">
+      <div className="mb-4 flex justify-between w-full items-center flex-shrink-0">
         <h2 className="text-2xl font-bold text-white">⚫ Checkers</h2>
         <div className="flex gap-2">
           <button 
             onClick={() => setShowCommands(!showCommands)}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors"
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
           >
             <Info size={16} /> {showCommands ? 'Hide' : 'Show'} Commands
           </button>
           <button 
             onClick={handleReset} 
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-2 text-white transition-colors"
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-2 text-white transition-colors text-sm"
           >
             <RefreshCw size={16} /> New Game
           </button>
@@ -227,13 +260,13 @@ export const CheckersBoard: React.FC = () => {
 
       {/* Commands Panel */}
       {showCommands && (
-        <div className="mb-4 w-full bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <h3 className="text-white font-bold mb-2 flex items-center gap-2">
+        <div className="mb-4 w-full bg-gray-800 rounded-lg p-4 border border-gray-700 flex-shrink-0">
+          <h3 className="text-white font-bold mb-2 flex items-center gap-2 text-sm">
             📋 Available Commands
           </h3>
-          <div className="space-y-2 text-sm">
+          <div className="space-y-2 text-xs">
             <div className="flex items-start gap-2">
-              <code className="bg-gray-900 px-2 py-1 rounded text-green-400">!move [from] to [to]</code>
+              <code className="bg-gray-900 px-2 py-1 rounded text-green-400 text-xs">!move [from] to [to]</code>
               <span className="text-gray-300">Move a piece (e.g., !move A3 to B4)</span>
             </div>
             <div className="text-xs text-gray-500 ml-2">
@@ -250,7 +283,7 @@ export const CheckersBoard: React.FC = () => {
       )}
 
       {/* Board */}
-      <div className="grid grid-cols-8 gap-0 border-4 border-gray-700 mb-4">
+      <div className="grid grid-cols-8 gap-0 border-4 border-gray-700 mb-4 flex-shrink-0">
         {board.map((row, rowIdx) =>
           row.map((piece, colIdx) => {
             const index = rowIdx * 8 + colIdx;
@@ -287,7 +320,7 @@ export const CheckersBoard: React.FC = () => {
       </div>
 
       {/* Game Status */}
-      <div className="text-white text-center">
+      <div className="text-white text-center flex-shrink-0">
         <p className="text-sm text-gray-400">
           Current Turn: {game.getCurrentPlayer() === 1 ? '🔴 Red (You)' : '⚫ Black (AI)'}
         </p>
@@ -295,8 +328,13 @@ export const CheckersBoard: React.FC = () => {
 
       {/* Game Over */}
       {game.isGameOver() && (
-        <div className="mt-4 text-xl font-bold text-yellow-400">
-          {game.getWinner() === 'player' ? '🎉 You Won!' : '🤖 AI Wins!'}
+        <div className="mt-4 p-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex-shrink-0">
+          <div className="text-2xl font-bold text-white text-center">
+            {game.getWinner() === 'player' ? '🎉 You Won!' : '🤖 AI Wins!'}
+          </div>
+          <div className="text-sm text-white text-center mt-2">
+            Game will restart in 10 seconds...
+          </div>
         </div>
       )}
     </div>
