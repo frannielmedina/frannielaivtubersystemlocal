@@ -6,10 +6,12 @@ export class CheckersGame {
   private onMove: (move: CheckersMove) => void;
   private aiPlayer: 1 | -1;
 
-  constructor(aiColor: 'red' | 'black', onMove: (move: CheckersMove) => void) {
+  // FIXED: Accept 'white' | 'black' and map to red/black internally
+  constructor(aiColor: 'white' | 'black', onMove: (move: CheckersMove) => void) {
     this.board = this.initializeBoard();
     this.currentPlayer = 1; // Player always starts (red)
-    this.aiPlayer = aiColor === 'red' ? 1 : -1;
+    // Map white to red (1), black to black (-1)
+    this.aiPlayer = aiColor === 'white' ? 1 : -1;
     this.onMove = onMove;
   }
 
@@ -37,23 +39,15 @@ export class CheckersGame {
     return board;
   }
 
-  private posToIndex(row: number, col: number): number {
-    return row * 8 + col;
-  }
-
-  private indexToPos(index: number): [number, number] {
-    return [Math.floor(index / 8), index % 8];
-  }
-
-  makeMove(from: number, to: number): CheckersMove | null {
-    const [fromRow, fromCol] = this.indexToPos(from);
-    const [toRow, toCol] = this.indexToPos(to);
-
+  makeMove(fromRow: number, fromCol: number, toRow: number, toCol: number): CheckersMove | null {
     const piece = this.board[fromRow][fromCol];
     if (!piece || Math.sign(piece) !== this.currentPlayer) return null;
 
-    const moves = this.getLegalMoves(from);
-    const move = moves.find(m => m.to === to);
+    const moves = this.getLegalMoves(fromRow, fromCol);
+    const move = moves.find(m => {
+      const [r, c] = this.indexToPos(m.to);
+      return r === toRow && c === toCol;
+    });
     
     if (!move) return null;
 
@@ -79,27 +73,35 @@ export class CheckersGame {
     return move;
   }
 
-  getLegalMoves(from: number): CheckersMove[] {
-    const [row, col] = this.indexToPos(from);
-    const piece = this.board[row][col];
+  private posToIndex(row: number, col: number): number {
+    return row * 8 + col;
+  }
+
+  private indexToPos(index: number): [number, number] {
+    return [Math.floor(index / 8), index % 8];
+  }
+
+  getLegalMoves(fromRow: number, fromCol: number): CheckersMove[] {
+    const piece = this.board[fromRow][fromCol];
     
     if (!piece || Math.sign(piece) !== this.currentPlayer) return [];
 
     const moves: CheckersMove[] = [];
     const isKing = Math.abs(piece) === 2;
     const direction = piece > 0 ? -1 : 1; // Red moves up (-1), Black moves down (1)
+    const from = this.posToIndex(fromRow, fromCol);
 
     // Check for jump moves first (mandatory if available)
-    const jumps = this.getJumpMoves(from, row, col, piece, isKing, direction);
-    if (jumps.length > 0) return jumps;
+    const jumps = this.getJumpMoves(fromRow, fromCol, piece, isKing, direction);
+    if (jumps.length > 0) return jumps.map(j => ({ ...j, from }));
 
     // Regular moves
     const directions = isKing ? [-1, 1] : [direction];
     
     for (const dir of directions) {
       for (const colDir of [-1, 1]) {
-        const newRow = row + dir;
-        const newCol = col + colDir;
+        const newRow = fromRow + dir;
+        const newCol = fromCol + colDir;
         
         if (this.isValidPosition(newRow, newCol) && !this.board[newRow][newCol]) {
           moves.push({
@@ -114,14 +116,13 @@ export class CheckersGame {
   }
 
   private getJumpMoves(
-    from: number,
     row: number,
     col: number,
     piece: number,
     isKing: boolean,
     direction: number
-  ): CheckersMove[] {
-    const jumps: CheckersMove[] = [];
+  ): { to: number; captured: number[] }[] {
+    const jumps: { to: number; captured: number[] }[] = [];
     const directions = isKing ? [-1, 1] : [direction];
 
     for (const dir of directions) {
@@ -138,7 +139,6 @@ export class CheckersGame {
           Math.sign(this.board[midRow][midCol]!) !== Math.sign(piece)
         ) {
           jumps.push({
-            from,
             to: this.posToIndex(jumpRow, jumpCol),
             captured: [this.posToIndex(midRow, midCol)],
           });
@@ -161,11 +161,10 @@ export class CheckersGame {
     
     for (let row = 0; row < 8; row++) {
       for (let col = 0; col < 8; col++) {
-        const index = this.posToIndex(row, col);
         const piece = this.board[row][col];
         
         if (piece && Math.sign(piece) === this.aiPlayer) {
-          allMoves.push(...this.getLegalMoves(index));
+          allMoves.push(...this.getLegalMoves(row, col));
         }
       }
     }
@@ -181,7 +180,10 @@ export class CheckersGame {
     // Simulate thinking time
     await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
 
-    return this.makeMove(selectedMove.from, selectedMove.to);
+    const [fromRow, fromCol] = this.indexToPos(selectedMove.from);
+    const [toRow, toCol] = this.indexToPos(selectedMove.to);
+
+    return this.makeMove(fromRow, fromCol, toRow, toCol);
   }
 
   isGameOver(): boolean {
@@ -196,7 +198,7 @@ export class CheckersGame {
       for (let col = 0; col < 8; col++) {
         const piece = this.board[row][col];
         if (piece && Math.sign(piece) === player) {
-          if (this.getLegalMoves(this.posToIndex(row, col)).length > 0) {
+          if (this.getLegalMoves(row, col).length > 0) {
             return true;
           }
         }
@@ -223,5 +225,22 @@ export class CheckersGame {
 
   getCurrentPlayer(): 1 | -1 {
     return this.currentPlayer;
+  }
+
+  getHint(): { from: [number, number]; to: [number, number] } | null {
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const piece = this.board[row][col];
+        if (piece && Math.sign(piece) === this.currentPlayer) {
+          const moves = this.getLegalMoves(row, col);
+          if (moves.length > 0) {
+            const move = moves[0];
+            const [toRow, toCol] = this.indexToPos(move.to);
+            return { from: [row, col], to: [toRow, toCol] };
+          }
+        }
+      }
+    }
+    return null;
   }
 }
