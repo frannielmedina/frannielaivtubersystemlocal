@@ -18,6 +18,8 @@ import { Settings, MessageCircle, Video, Mic } from 'lucide-react';
 export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
+  
+  // Auto-hide state
   const [controlsVisible, setControlsVisible] = useState(true);
   const [mouseIdleTimeout, setMouseIdleTimeout] = useState<NodeJS.Timeout | null>(null);
   
@@ -41,7 +43,7 @@ export default function Home() {
     }
   }, [setConfig]);
 
-  // Handle mouse movement for auto-hide controls
+  // Handle mouse movement for auto-hide controls (1 minute idle)
   useEffect(() => {
     const handleMouseMove = () => {
       setControlsVisible(true);
@@ -52,7 +54,7 @@ export default function Home() {
       
       const timeout = setTimeout(() => {
         setControlsVisible(false);
-      }, 60000);
+      }, 60000); // 60 seconds = 1 minute
       
       setMouseIdleTimeout(timeout);
     };
@@ -241,7 +243,7 @@ export default function Home() {
         <div className="col-span-5 relative h-screen">
           <VTuberScene />
           
-          {/* Controls Overlay - Auto-hide */}
+          {/* Controls Overlay - Auto-hide after 1 minute */}
           <div 
             className={`absolute top-4 right-4 flex gap-2 transition-opacity duration-500 ${
               controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -275,7 +277,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* VTuber Info - Auto-hide */}
+          {/* VTuber Info - Auto-hide after 1 minute */}
           <div 
             className={`absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg p-4 transition-opacity duration-500 ${
               controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -309,14 +311,25 @@ export default function Home() {
           {renderGame()}
         </div>
 
-        {/* Chat Panel - Right Side */}
-        <div className={`col-span-3 h-screen transition-all ${chatOpen ? '' : 'hidden'}`}>
+        {/* Chat Panel - Right Side - Auto-hide after 1 minute */}
+        <div 
+          className={`col-span-3 h-screen transition-all duration-500 ${
+            chatOpen && controlsVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0'
+          }`}
+        >
           <ChatPanel onDirectMessage={handleDirectMessage} />
         </div>
       </div>
 
       {/* Settings Modal */}
       <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      
+      {/* Mouse idle indicator - shown when controls are hidden */}
+      {!controlsVisible && (
+        <div className="fixed bottom-4 right-4 bg-black bg-opacity-60 px-4 py-2 rounded-full text-white text-xs animate-pulse">
+          💤 Mueve el mouse para mostrar controles
+        </div>
+      )}
     </main>
   );
 }
