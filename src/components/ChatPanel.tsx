@@ -10,11 +10,39 @@ interface ChatPanelProps {
 export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
   const { chatMessages, config } = useStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [inputMessage, setInputMessage] = useState('');
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
+  const lastMessageCountRef = useRef(chatMessages.length);
 
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+    // Only auto-scroll if user is not manually scrolling
+    if (!isUserScrolling && chatMessages.length > lastMessageCountRef.current) {
+      scrollToBottom();
+    }
+    
+    lastMessageCountRef.current = chatMessages.length;
+  }, [chatMessages, isUserScrolling]);
+
+  // Detect if user is scrolling manually
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
+    
+    setIsUserScrolling(!isAtBottom);
+  };
+
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: 'auto', // Changed from 'smooth' to prevent layout shifts
+        block: 'end' 
+      });
+    }
+  };
 
   const handleSend = () => {
     if (!inputMessage.trim()) return;
@@ -24,6 +52,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
     }
     
     setInputMessage('');
+    
+    // Force scroll to bottom after sending
+    setTimeout(() => {
+      setIsUserScrolling(false);
+      scrollToBottom();
+    }, 100);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -35,14 +69,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
 
   return (
     <div className="h-full bg-gray-900 flex flex-col">
-      <div className="p-4 bg-purple-900 border-b border-purple-700">
+      {/* Header - Fixed height */}
+      <div className="flex-shrink-0 p-4 bg-purple-900 border-b border-purple-700">
         <h2 className="text-xl font-bold text-white">💬 Chat</h2>
         <p className="text-sm text-gray-300">
           {config.twitch.enabled ? `🟢 Connected to ${config.twitch.channel}` : '🔴 Disconnected'}
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      {/* Messages - Scrollable area with fixed height */}
+      <div 
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-3"
+        style={{ 
+          minHeight: 0, // Important for flex scrolling
+          overflowAnchor: 'none' // Prevent browser auto-scroll interference
+        }}
+      >
         {chatMessages.length === 0 && (
           <div className="text-center text-gray-500 mt-8">
             <p>No messages yet</p>
@@ -57,13 +101,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
         {chatMessages.map((msg: any) => (
           <div
             key={msg.id}
-            className={`p-3 rounded-lg animate-slide-in-left ${
+            className={`p-3 rounded-lg animate-fade-in ${
               msg.isAI ? 'bg-purple-900 bg-opacity-50' : 'bg-gray-800'
             }`}
           >
             <div className="flex items-center gap-2 mb-1">
               <span
-                className="font-bold"
+                className="font-bold text-sm"
                 style={{ color: msg.color || (msg.isAI ? '#a855f7' : '#60a5fa') }}
               >
                 {msg.username}
@@ -72,13 +116,31 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
                 {new Date(msg.timestamp).toLocaleTimeString()}
               </span>
             </div>
-            <p className="text-white">{msg.message}</p>
+            <p className="text-white text-sm break-words">{msg.message}</p>
           </div>
         ))}
-        <div ref={messagesEndRef} />
+        
+        {/* Scroll anchor */}
+        <div ref={messagesEndRef} style={{ height: '1px' }} />
       </div>
 
-      <div className="p-4 bg-gray-800 border-t border-gray-700">
+      {/* Show "New messages" indicator when user scrolls up */}
+      {isUserScrolling && (
+        <div className="flex-shrink-0 px-4 py-2 bg-purple-800 border-t border-purple-700">
+          <button
+            onClick={() => {
+              setIsUserScrolling(false);
+              scrollToBottom();
+            }}
+            className="w-full text-center text-sm text-white hover:text-purple-200 transition-colors"
+          >
+            ↓ New messages - Click to scroll down ↓
+          </button>
+        </div>
+      )}
+
+      {/* Input - Fixed height */}
+      <div className="flex-shrink-0 p-4 bg-gray-800 border-t border-gray-700">
         <div className="flex gap-2">
           <input
             type="text"
@@ -86,12 +148,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder={config.twitch.enabled ? "Direct message (for testing)..." : "Send message to your VTuber..."}
-            className="flex-1 px-4 py-2 bg-gray-700 text-white rounded border border-gray-600 outline-none focus:border-purple-500"
+            className="flex-1 px-4 py-2 bg-gray-700 text-white rounded border border-gray-600 outline-none focus:border-purple-500 text-sm"
           />
           <button
             onClick={handleSend}
             disabled={!inputMessage.trim()}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded transition-colors"
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded transition-colors flex-shrink-0"
+            aria-label="Send message"
           >
             <Send size={20} />
           </button>
