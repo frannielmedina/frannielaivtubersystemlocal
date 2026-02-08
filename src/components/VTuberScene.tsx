@@ -467,7 +467,7 @@ export const VTuberScene: React.FC = () => {
   return (
     <div className="w-full h-full bg-gradient-to-b from-purple-900 to-blue-900">
       <Canvas
-        camera={{ position: [0, 0.5, 3], fov: 45 }}
+        camera={{ position: [0, 1.2, 3], fov: 45 }}
         gl={{ alpha: true, antialias: true }}
       >
         <ambientLight intensity={0.9} />
@@ -484,7 +484,7 @@ export const VTuberScene: React.FC = () => {
           enableZoom={true}
           minDistance={1}
           maxDistance={8}
-          target={[0, 0.5, 0]}
+          target={[0, 1, 0]}
         />
       </Canvas>
     </div>
