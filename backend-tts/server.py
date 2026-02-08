@@ -1,9 +1,9 @@
 """
 Backend TTS Server MEJORADO con Coqui TTS XTTS-v2
-- Limpieza automática de tags de animación
-- Detección de emociones
-- Soporte para lipsync (phoneme timing)
-- 17 idiomas con auto-detección
+✅ CORS configurado para ngrok y Vercel
+✅ Limpieza automática de tags de animación
+✅ Detección de emociones
+✅ 17 idiomas con auto-detección
 """
 
 from flask import Flask, request, send_file, jsonify
@@ -36,7 +36,16 @@ except ImportError:
     print("⚠️  pypinyin not available. Install with: pip install pypinyin")
 
 app = Flask(__name__)
-CORS(app)
+
+# ✅ CORS Configuration - Allow all origins for ngrok compatibility
+CORS(app, resources={
+    r"/api/*": {
+        "origins": "*",  # Allow all origins (needed for ngrok)
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "ngrok-skip-browser-warning"],
+        "expose_headers": ["X-Emotion"]
+    }
+})
 
 # Initialize TTS model
 tts = None
@@ -169,7 +178,7 @@ def health_check():
     })
 
 
-@app.route('/api/tts', methods=['POST'])
+@app.route('/api/tts', methods=['POST', 'OPTIONS'])
 def generate_speech():
     """
     Generate TTS audio
@@ -180,6 +189,14 @@ def generate_speech():
         "language": "es" (optional, auto-detected if not provided)
     }
     """
+    # Handle OPTIONS request for CORS preflight
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, ngrok-skip-browser-warning')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        return response, 200
+    
     if not COQUI_AVAILABLE or tts is None:
         return jsonify({'error': 'TTS not available'}), 503
 
@@ -250,11 +267,15 @@ def generate_speech():
         
         # Add emotion data to response headers
         response.headers['X-Emotion'] = json.dumps(emotion)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Expose-Headers'] = 'X-Emotion'
         
         return response
 
     except Exception as e:
         print(f"Error generating TTS: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -353,6 +374,7 @@ if __name__ == '__main__':
     print("  ✅ Emotion detection")
     print("  ✅ 17 language support")
     print("  ✅ Pypinyin for Chinese")
+    print("  ✅ CORS enabled for ngrok/Vercel")
     print("="*50 + "\n")
     
     app.run(host='0.0.0.0', port=5000, debug=False)
