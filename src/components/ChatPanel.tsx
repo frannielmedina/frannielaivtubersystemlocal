@@ -14,6 +14,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
   const [inputMessage, setInputMessage] = useState('');
   const [isUserScrolling, setIsUserScrolling] = useState(false);
   const lastMessageCountRef = useRef(chatMessages.length);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -32,14 +33,28 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
     const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
     const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
     
-    setIsUserScrolling(!isAtBottom);
+    // Clear existing timeout
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    
+    if (!isAtBottom) {
+      setIsUserScrolling(true);
+      
+      // Reset after 2 seconds of no scrolling
+      scrollTimeoutRef.current = setTimeout(() => {
+        setIsUserScrolling(false);
+      }, 2000);
+    } else {
+      setIsUserScrolling(false);
+    }
   };
 
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ 
-        behavior: 'auto', // Changed from 'smooth' to prevent layout shifts
-        block: 'end' 
+        behavior: 'smooth',
+        block: 'nearest'
       });
     }
   };
@@ -77,14 +92,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
         </p>
       </div>
 
-      {/* Messages - Scrollable area with fixed height */}
+      {/* Messages - Scrollable area with FIXED height */}
       <div 
         ref={messagesContainerRef}
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto p-4 space-y-3"
         style={{ 
-          minHeight: 0, // Important for flex scrolling
-          overflowAnchor: 'none' // Prevent browser auto-scroll interference
+          height: 0, // Important: Forces flex-1 to work correctly
+          minHeight: 0 // Prevents flex child from growing
         }}
       >
         {chatMessages.length === 0 && (
@@ -121,7 +136,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
         ))}
         
         {/* Scroll anchor */}
-        <div ref={messagesEndRef} style={{ height: '1px' }} />
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Show "New messages" indicator when user scrolls up */}
