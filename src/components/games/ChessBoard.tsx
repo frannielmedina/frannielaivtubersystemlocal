@@ -2,14 +2,15 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { ChessGame } from '@/games/ChessGame';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Info } from 'lucide-react';
 
 export const ChessBoard: React.FC = () => {
-  const { gameState, setGameState, setAnimation, addChatMessage } = useStore();
+  const { gameState, setGameState, setAnimation, addChatMessage, chatMessages } = useStore();
   const [game, setGame] = useState<ChessGame | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [legalMoves, setLegalMoves] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showCommands, setShowCommands] = useState(true);
 
   useEffect(() => {
     const initGame = async () => {
@@ -67,12 +68,10 @@ export const ChessBoard: React.FC = () => {
         }
       });
       
-      // Wait for game to initialize
       await newGame.waitForInit();
       setGame(newGame);
       setLoading(false);
       
-      // If AI is white, make first move
       if (gameState.aiColor === 'white') {
         setTimeout(() => newGame.makeAIMove(), 1000);
       }
@@ -80,6 +79,65 @@ export const ChessBoard: React.FC = () => {
 
     initGame();
   }, []);
+
+  // Listen for chat commands
+  useEffect(() => {
+    if (!game || loading) return;
+    
+    const lastMessage = chatMessages[chatMessages.length - 1];
+    if (!lastMessage || lastMessage.isAI) return;
+    
+    const message = lastMessage.message.trim().toLowerCase();
+    
+    // Chess command: !move e2 to e4
+    const movePattern = /^!move\s+([a-h][1-8])\s+to\s+([a-h][1-8])$/i;
+    const match = message.match(movePattern);
+    
+    if (match) {
+      const [_, from, to] = match;
+      handleCommandMove(from.toLowerCase(), to.toLowerCase());
+    }
+  }, [chatMessages, game, loading]);
+
+  const handleCommandMove = (from: string, to: string) => {
+    if (!game) return;
+    
+    const currentTurn = game.turn();
+    const playerTurn = gameState.aiColor === 'white' ? 'b' : 'w';
+    
+    if (currentTurn !== playerTurn) {
+      addChatMessage({
+        id: Date.now().toString(),
+        username: 'System',
+        message: `❌ It's not your turn! Wait for AI to move.`,
+        timestamp: Date.now(),
+        color: '#ef4444'
+      });
+      return;
+    }
+    
+    const move = game.makePlayerMove(from, to);
+    
+    if (move) {
+      addChatMessage({
+        id: Date.now().toString(),
+        username: 'System',
+        message: `✅ Moved from ${from.toUpperCase()} to ${to.toUpperCase()}`,
+        timestamp: Date.now(),
+        color: '#10b981'
+      });
+      setSelectedSquare(null);
+      setLegalMoves([]);
+    } else {
+      addChatMessage({
+        id: Date.now().toString(),
+        username: 'System',
+        message: `❌ Invalid move: ${from.toUpperCase()} to ${to.toUpperCase()}`,
+        timestamp: Date.now(),
+        color: '#ef4444'
+      });
+    }
+  };
 
   useEffect(() => {
     if (!game || loading || game.isGameOver()) return;
@@ -95,7 +153,6 @@ export const ChessBoard: React.FC = () => {
   const handleSquareClick = (square: string) => {
     if (!game || loading || game.isGameOver()) return;
     
-    // Check if it's player's turn
     const currentTurn = game.turn();
     const playerTurn = gameState.aiColor === 'white' ? 'b' : 'w';
     
@@ -118,7 +175,6 @@ export const ChessBoard: React.FC = () => {
         setSelectedSquare(null);
         setLegalMoves([]);
       } else {
-        // Try selecting new square
         const moves = game.getLegalMoves(square);
         if (moves.length > 0) {
           setSelectedSquare(square);
@@ -158,7 +214,6 @@ export const ChessBoard: React.FC = () => {
       color: '#9333ea'
     });
     
-    // If AI is white, make first move
     if (gameState.aiColor === 'white') {
       setTimeout(() => game.makeAIMove(), 1000);
     }
@@ -181,31 +236,62 @@ export const ChessBoard: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center justify-center h-full p-4">
+      {/* Header */}
       <div className="mb-4 flex justify-between w-full items-center">
         <h2 className="text-2xl font-bold text-white">♟️ Chess</h2>
-        <button 
-          onClick={handleReset} 
-          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-2 text-white transition-colors"
-        >
-          <RefreshCw size={16} /> New Game
-        </button>
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setShowCommands(!showCommands)}
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 text-white transition-colors"
+          >
+            <Info size={16} /> {showCommands ? 'Hide' : 'Show'} Commands
+          </button>
+          <button 
+            onClick={handleReset} 
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded flex items-center gap-2 text-white transition-colors"
+          >
+            <RefreshCw size={16} /> New Game
+          </button>
+        </div>
       </div>
 
+      {/* Commands Panel */}
+      {showCommands && (
+        <div className="mb-4 w-full bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <h3 className="text-white font-bold mb-2 flex items-center gap-2">
+            📋 Available Commands
+          </h3>
+          <div className="space-y-2 text-sm">
+            <div className="flex items-start gap-2">
+              <code className="bg-gray-900 px-2 py-1 rounded text-green-400">!move [from] to [to]</code>
+              <span className="text-gray-300">Move a piece (e.g., !move E2 to E4)</span>
+            </div>
+            <div className="text-xs text-gray-500 ml-2">
+              • Columns: A-H (left to right)
+              <br />
+              • Rows: 1-8 (bottom to top)
+              <br />
+              • Example: !move E2 to E4 (King's pawn opening)
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Check/Checkmate Alert */}
       {game.isCheck() && !game.isCheckmate() && (
         <div className="mb-2 px-4 py-2 bg-red-600 text-white rounded animate-pulse">
           ⚠️ CHECK! King is in danger!
         </div>
       )}
 
+      {/* Board */}
       <div className="relative">
-        {/* Rank labels (left) */}
         <div className="absolute -left-6 top-0 h-full flex flex-col justify-around text-gray-400 text-sm">
           {ranks.map(rank => (
             <div key={rank} className="h-16 flex items-center">{rank}</div>
           ))}
         </div>
 
-        {/* Board */}
         <div className="grid grid-cols-8 gap-0 border-4 border-gray-700 shadow-2xl">
           {board.map((row, rowIdx) =>
             row.map((piece, colIdx) => {
@@ -241,7 +327,6 @@ export const ChessBoard: React.FC = () => {
           )}
         </div>
 
-        {/* File labels (bottom) */}
         <div className="flex justify-around text-gray-400 text-sm mt-1">
           {files.map(file => (
             <div key={file} className="w-16 text-center">{file}</div>
@@ -249,6 +334,7 @@ export const ChessBoard: React.FC = () => {
         </div>
       </div>
 
+      {/* Game Status */}
       <div className="mt-4 text-white text-center">
         <p className="text-sm text-gray-400">
           Turn: {game.turn() === 'w' ? '⚪ White' : '⚫ Black'}
@@ -258,6 +344,7 @@ export const ChessBoard: React.FC = () => {
         )}
       </div>
 
+      {/* Game Over */}
       {game.isGameOver() && (
         <div className="mt-4 p-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg">
           <div className="text-2xl font-bold text-white text-center">
