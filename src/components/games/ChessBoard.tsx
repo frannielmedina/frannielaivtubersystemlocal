@@ -270,10 +270,12 @@ export const ChessBoard: React.FC = () => {
   const board = game.getBoard();
 
   const getPieceSymbol = (piece: string): string => {
-    if (!piece) return '';
+    if (!piece || piece.length < 2) return '';
     
-    const [color, type] = piece;
-    const pieces: { [key: string]: { w: string; b: string } } = {
+    const color = piece[0] as 'w' | 'b';
+    const type = piece[1] as 'p' | 'r' | 'n' | 'b' | 'q' | 'k';
+    
+    const pieces: Record<string, { w: string; b: string }> = {
       p: { w: '♙', b: '♟' },
       r: { w: '♖', b: '♜' },
       n: { w: '♘', b: '♞' },
@@ -281,6 +283,7 @@ export const ChessBoard: React.FC = () => {
       q: { w: '♕', b: '♛' },
       k: { w: '♔', b: '♚' },
     };
+    
     return pieces[type]?.[color] || '';
   };
 
