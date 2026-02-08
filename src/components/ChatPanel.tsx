@@ -18,7 +18,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    // Only auto-scroll if user is not manually scrolling
     if (!isUserScrolling && chatMessages.length > lastMessageCountRef.current) {
       scrollToBottom();
     }
@@ -33,7 +32,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
     const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
     const isAtBottom = Math.abs(scrollHeight - clientHeight - scrollTop) < 50;
     
-    // Clear existing timeout
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
     }
@@ -41,7 +39,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
     if (!isAtBottom) {
       setIsUserScrolling(true);
       
-      // Reset after 2 seconds of no scrolling
       scrollTimeoutRef.current = setTimeout(() => {
         setIsUserScrolling(false);
       }, 2000);
@@ -54,7 +51,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ 
         behavior: 'smooth',
-        block: 'nearest'
+        block: 'end'
       });
     }
   };
@@ -68,7 +65,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
     
     setInputMessage('');
     
-    // Force scroll to bottom after sending
     setTimeout(() => {
       setIsUserScrolling(false);
       scrollToBottom();
@@ -83,23 +79,24 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
   };
 
   return (
-    <div className="h-full bg-gray-900 flex flex-col">
-      {/* Header - Fixed height */}
-      <div className="flex-shrink-0 p-4 bg-purple-900 border-b border-purple-700">
+    <div className="h-screen bg-gray-900 flex flex-col">
+      {/* Header - 80px fixed */}
+      <div className="h-20 flex-shrink-0 p-4 bg-purple-900 border-b border-purple-700">
         <h2 className="text-xl font-bold text-white">💬 Chat</h2>
         <p className="text-sm text-gray-300">
           {config.twitch.enabled ? `🟢 Connected to ${config.twitch.channel}` : '🔴 Disconnected'}
         </p>
       </div>
 
-      {/* Messages - Scrollable area with FIXED height */}
+      {/* Messages - calc(100vh - 80px header - 140px input) = rest of space */}
       <div 
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4 space-y-3"
+        className="overflow-y-auto p-4 space-y-3 bg-gray-900"
         style={{ 
-          height: 0, // Important: Forces flex-1 to work correctly
-          minHeight: 0 // Prevents flex child from growing
+          height: 'calc(100vh - 220px)',
+          maxHeight: 'calc(100vh - 220px)',
+          minHeight: 'calc(100vh - 220px)'
         }}
       >
         {chatMessages.length === 0 && (
@@ -116,7 +113,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
         {chatMessages.map((msg: any) => (
           <div
             key={msg.id}
-            className={`p-3 rounded-lg animate-fade-in ${
+            className={`p-3 rounded-lg ${
               msg.isAI ? 'bg-purple-900 bg-opacity-50' : 'bg-gray-800'
             }`}
           >
@@ -135,13 +132,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
           </div>
         ))}
         
-        {/* Scroll anchor */}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Show "New messages" indicator when user scrolls up */}
+      {/* "New messages" indicator - 40px */}
       {isUserScrolling && (
-        <div className="flex-shrink-0 px-4 py-2 bg-purple-800 border-t border-purple-700">
+        <div className="h-10 flex-shrink-0 px-4 py-2 bg-purple-800 border-t border-purple-700">
           <button
             onClick={() => {
               setIsUserScrolling(false);
@@ -154,8 +150,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ onDirectMessage }) => {
         </div>
       )}
 
-      {/* Input - Fixed height */}
-      <div className="flex-shrink-0 p-4 bg-gray-800 border-t border-gray-700">
+      {/* Input - 140px fixed */}
+      <div className="h-35 flex-shrink-0 p-4 bg-gray-800 border-t border-gray-700">
         <div className="flex gap-2">
           <input
             type="text"
