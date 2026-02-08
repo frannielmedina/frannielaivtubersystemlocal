@@ -18,6 +18,9 @@ import { Settings, MessageCircle, Video, Mic } from 'lucide-react';
 export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [mouseIdleTimeout, setMouseIdleTimeout] = useState<NodeJS.Timeout | null>(null);
+  
   const { config, addChatMessage, setAnimation, setConfig } = useStore();
   
   const [aiService] = useState(() => new AIService(config.ai));
@@ -37,6 +40,40 @@ export default function Home() {
       }
     }
   }, [setConfig]);
+
+  // Handle mouse movement for auto-hide controls
+  useEffect(() => {
+    const handleMouseMove = () => {
+      // Show controls
+      setControlsVisible(true);
+      
+      // Clear existing timeout
+      if (mouseIdleTimeout) {
+        clearTimeout(mouseIdleTimeout);
+      }
+      
+      // Set new timeout to hide controls after 60 seconds (1 minute)
+      const timeout = setTimeout(() => {
+        setControlsVisible(false);
+      }, 60000); // 60000ms = 1 minute
+      
+      setMouseIdleTimeout(timeout);
+    };
+
+    // Add event listener
+    window.addEventListener('mousemove', handleMouseMove);
+    
+    // Initial timeout
+    handleMouseMove();
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      if (mouseIdleTimeout) {
+        clearTimeout(mouseIdleTimeout);
+      }
+    };
+  }, [mouseIdleTimeout]);
 
   // Update services when config changes
   useEffect(() => {
@@ -218,8 +255,12 @@ export default function Home() {
         <div className="col-span-5 relative">
           <VTuberScene />
           
-          {/* Controls Overlay */}
-          <div className="absolute top-4 right-4 flex gap-2">
+          {/* Controls Overlay - Auto-hide after 1 minute */}
+          <div 
+            className={`absolute top-4 right-4 flex gap-2 transition-opacity duration-500 ${
+              controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+          >
             <button
               onClick={() => setConfig({ appMode: 'collab' })}
               className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors"
@@ -248,8 +289,12 @@ export default function Home() {
             </button>
           </div>
 
-          {/* VTuber Info */}
-          <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg p-4">
+          {/* VTuber Info - Auto-hide after 1 minute */}
+          <div 
+            className={`absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg p-4 transition-opacity duration-500 ${
+              controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+          >
             <h1 className="text-2xl font-bold text-white">
               🎮 {config.vtuber.name || 'AI VTuber'}
             </h1>
