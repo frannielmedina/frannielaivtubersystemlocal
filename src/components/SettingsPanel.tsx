@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { X, Save, Upload, Download, FileUp } from 'lucide-react';
+import { EDGE_TTS_VOICES, getRecommendedVoices } from '@/config/edgeTTSVoices';
 
 interface SettingsPanelProps {
   isOpen: boolean;
@@ -53,14 +54,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
   if (!isOpen) return null;
 
   const handleSave = () => {
-    console.log('💾 Guardando configuración:', localConfig);
+    console.log('💾 Saving configuration:', localConfig);
     
     // Update global config
     setConfig(localConfig);
     
     // Save to localStorage
     localStorage.setItem('vtuber-config', JSON.stringify(localConfig));
-    console.log('✅ Configuración guardada en localStorage');
+    console.log('✅ Configuration saved to localStorage');
     
     // Close panel
     onClose();
@@ -330,7 +331,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   type="text"
                   value={localConfig.ai.apiKey}
                   onChange={(e) => {
-                    console.log('🔑 API Key actualizada:', e.target.value.substring(0, 10) + '...');
+                    console.log('🔑 API Key updated:', e.target.value.substring(0, 10) + '...');
                     setLocalConfig({
                       ...localConfig,
                       ai: { ...localConfig.ai, apiKey: e.target.value },
@@ -401,13 +402,241 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   }
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 >
+                  <option value="edge-tts">Edge TTS (Free & High Quality) 🎤 NEW!</option>
                   <option value="webspeech">Web Speech API (Built-in)</option>
                   <option value="coqui-local">Coqui TTS (Local/Ngrok)</option>
                   <option value="coqui-colab">Coqui TTS (Google Colab)</option>
-                  <option value="fish-audio-colab">Fish Audio (Google Colab) 🎣 NEW!</option>
+                  <option value="fish-audio-colab">Fish Audio (Google Colab) 🎣</option>
                   <option value="elevenlabs">ElevenLabs (Premium)</option>
                 </select>
               </div>
+
+              {/* Edge TTS Config - NEW! */}
+              {localConfig.tts.provider === 'edge-tts' && (
+                <div className="bg-gradient-to-r from-blue-900 to-purple-900 p-4 rounded border border-blue-700 space-y-3">
+                  <h4 className="text-white font-semibold flex items-center gap-2">
+                    🎤 Edge TTS Configuration <span className="text-xs bg-green-600 px-2 py-1 rounded">FREE & HIGH QUALITY!</span>
+                  </h4>
+                  
+                  <div className="bg-green-800 bg-opacity-30 p-3 rounded border border-green-600">
+                    <p className="text-sm text-green-200 mb-2">
+                      <strong>✨ Perfect for Kawaii VTubers!</strong>
+                    </p>
+                    <p className="text-xs text-gray-300">
+                      Microsoft Edge TTS provides high-quality, natural-sounding voices completely FREE! 
+                      No API key needed, no usage limits, works offline-capable.
+                    </p>
+                  </div>
+                  
+                  {/* Voice Selection */}
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Voice <span className="text-xs text-gray-500">(⭐ = Recommended for Kawaii Cat Girl)</span>
+                    </label>
+                    <select
+                      value={localConfig.tts.edgeTTSVoice || 'en-US-AnaNeural'}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, edgeTTSVoice: e.target.value },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                    >
+                      <optgroup label="⭐ TOP RECOMMENDATIONS FOR KAWAII CAT GIRL">
+                        {getRecommendedVoices().map((voice) => (
+                          <option key={voice.value} value={voice.value}>
+                            {voice.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                      
+                      <optgroup label="English (US) - Female">
+                        {EDGE_TTS_VOICES.filter(v => v.locale === 'en-US' && !v.suggested).map((voice) => (
+                          <option key={voice.value} value={voice.value}>
+                            {voice.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                      
+                      <optgroup label="Japanese - Female">
+                        {EDGE_TTS_VOICES.filter(v => v.locale === 'ja-JP' && !v.suggested).map((voice) => (
+                          <option key={voice.value} value={voice.value}>
+                            {voice.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                      
+                      <optgroup label="Spanish - Female">
+                        {EDGE_TTS_VOICES.filter(v => v.locale.startsWith('es-')).map((voice) => (
+                          <option key={voice.value} value={voice.value}>
+                            {voice.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                      
+                      <optgroup label="Other Languages">
+                        {EDGE_TTS_VOICES.filter(v => 
+                          !v.locale.startsWith('en-US') && 
+                          !v.locale.startsWith('ja-JP') && 
+                          !v.locale.startsWith('es-') &&
+                          !v.suggested
+                        ).map((voice) => (
+                          <option key={voice.value} value={voice.value}>
+                            {voice.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </div>
+
+                  {/* Pitch Control */}
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Pitch: {localConfig.tts.edgeTTSPitch || '+8Hz'}
+                      <span className="text-xs text-gray-500 ml-2">(Recommended: +8Hz to +15Hz for kawaii sound)</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="-20"
+                      max="30"
+                      step="1"
+                      value={parseInt((localConfig.tts.edgeTTSPitch || '+8Hz').replace(/[^0-9-]/g, ''))}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const formatted = value.startsWith('-') ? `${value}Hz` : `+${value}Hz`;
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, edgeTTSPitch: formatted },
+                        });
+                      }}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>Lower (-20Hz)</span>
+                      <span>Natural (0Hz)</span>
+                      <span>Higher (+30Hz)</span>
+                    </div>
+                  </div>
+
+                  {/* Rate Control */}
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Rate: {localConfig.tts.edgeTTSRate || '+5%'}
+                      <span className="text-xs text-gray-500 ml-2">(Recommended: +5% to +10% for energetic speech)</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="-50"
+                      max="100"
+                      step="5"
+                      value={parseInt((localConfig.tts.edgeTTSRate || '+5%').replace(/[^0-9-]/g, ''))}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        const formatted = value.startsWith('-') ? `${value}%` : `+${value}%`;
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, edgeTTSRate: formatted },
+                        });
+                      }}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>Slower (-50%)</span>
+                      <span>Normal (0%)</span>
+                      <span>Faster (+100%)</span>
+                    </div>
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div className="bg-blue-800 bg-opacity-30 p-3 rounded border border-blue-600">
+                    <p className="text-sm text-blue-200 mb-2">
+                      <strong>🎀 Quick Presets for Kawaii Cat Girl:</strong>
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => {
+                          setLocalConfig({
+                            ...localConfig,
+                            tts: {
+                              ...localConfig.tts,
+                              edgeTTSVoice: 'en-US-AnaNeural',
+                              edgeTTSPitch: '+8Hz',
+                              edgeTTSRate: '+5%',
+                            },
+                          });
+                        }}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm transition-colors"
+                      >
+                        🥇 Cute & Sweet
+                      </button>
+                      <button
+                        onClick={() => {
+                          setLocalConfig({
+                            ...localConfig,
+                            tts: {
+                              ...localConfig.tts,
+                              edgeTTSVoice: 'en-US-JennyNeural',
+                              edgeTTSPitch: '+10Hz',
+                              edgeTTSRate: '+8%',
+                            },
+                          });
+                        }}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm transition-colors"
+                      >
+                        🥈 Energetic & Fun
+                      </button>
+                      <button
+                        onClick={() => {
+                          setLocalConfig({
+                            ...localConfig,
+                            tts: {
+                              ...localConfig.tts,
+                              edgeTTSVoice: 'ja-JP-NanamiNeural',
+                              edgeTTSPitch: '+15Hz',
+                              edgeTTSRate: '+5%',
+                            },
+                          });
+                        }}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm transition-colors"
+                      >
+                        🥉 Japanese Kawaii
+                      </button>
+                      <button
+                        onClick={() => {
+                          setLocalConfig({
+                            ...localConfig,
+                            tts: {
+                              ...localConfig.tts,
+                              edgeTTSVoice: 'ja-JP-AoiNeural',
+                              edgeTTSPitch: '+18Hz',
+                              edgeTTSRate: '+8%',
+                            },
+                          });
+                        }}
+                        className="px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm transition-colors"
+                      >
+                        🎀 Ultra Kawaii
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Feature Highlights */}
+                  <div className="bg-purple-800 bg-opacity-30 p-3 rounded border border-purple-600">
+                    <p className="text-sm text-purple-200 mb-2">
+                      <strong>✅ Why Edge TTS is Perfect:</strong>
+                    </p>
+                    <ul className="text-xs text-gray-300 space-y-1 list-disc list-inside">
+                      <li>100% FREE - No API key, no limits</li>
+                      <li>High-quality natural voices</li>
+                      <li>Works offline after first load</li>
+                      <li>Low latency - instant speech</li>
+                      <li>Multiple languages & accents</li>
+                      <li>Customizable pitch & rate for perfect kawaii sound</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
 
               {/* ElevenLabs Config */}
               {localConfig.tts.provider === 'elevenlabs' && (
@@ -544,7 +773,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 </div>
               )}
 
-              {/* Fish Audio Config - NEW! */}
+              {/* Fish Audio Config */}
               {localConfig.tts.provider === 'fish-audio-colab' && (
                 <div className="bg-gradient-to-r from-blue-900 to-purple-900 p-4 rounded border border-blue-700 space-y-3">
                   <h4 className="text-white font-semibold flex items-center gap-2">
@@ -581,48 +810,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                       📋 Paste your ngrok URL from the Fish Audio Colab notebook
                     </p>
                   </div>
-
-                  <div className="bg-yellow-800 bg-opacity-30 p-3 rounded border border-yellow-600">
-                    <p className="text-sm text-yellow-200 mb-2">
-                      <strong>⚠️ Important Setup Steps:</strong>
-                    </p>
-                    <ul className="text-xs text-gray-300 space-y-1 list-disc list-inside">
-                      <li>Run the Fish Audio Colab notebook (FISH_AUDIO_COLAB.ipynb)</li>
-                      <li>Upload your reference voice (10-30 seconds of clear audio)</li>
-                      <li>Copy the ngrok HTTPS URL (not HTTP!)</li>
-                      <li>Paste the URL here</li>
-                      <li>Make sure the Colab cell keeps running</li>
-                    </ul>
-                  </div>
-
-                  <div className="bg-green-800 bg-opacity-30 p-3 rounded border border-green-600">
-                    <p className="text-sm text-green-200 mb-2">
-                      <strong>✅ Features:</strong>
-                    </p>
-                    <ul className="text-xs text-gray-300 space-y-1 list-disc list-inside">
-                      <li>🎤 Automatic voice cloning from reference</li>
-                      <li>🌍 Multilingual support (auto-detected)</li>
-                      <li>🎨 Natural emotion expression</li>
-                      <li>⚡ Fast generation</li>
-                      <li>🔧 Easy setup via Google Colab</li>
-                    </ul>
-                  </div>
-                </div>
-              )}
-
-              {/* Browser TTS Info */}
-              {localConfig.tts.provider === 'webspeech' && (
-                <div className="config-panel">
-                  <h4>ℹ️ TTS del Navegador</h4>
-                  <p>
-                    Utiliza la síntesis de voz integrada en tu navegador (Web Speech API).
-                  </p>
-                  <p>
-                    <strong>Ventajas:</strong> No requiere configuración, funciona sin internet.
-                  </p>
-                  <p>
-                    <strong>Desventajas:</strong> Calidad de voz variable según el navegador.
-                  </p>
                 </div>
               )}
 
@@ -760,38 +947,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   placeholder="channel_name"
                   className="w-full px-3 py-2 bg-gray-800 text-white rounded border border-gray-700"
                 />
-              </div>
-
-              <div className="bg-blue-900 bg-opacity-30 p-3 rounded border border-blue-700">
-                <p className="text-sm text-blue-200 mb-2">
-                  <strong>⚠️ OAuth Token Generator Discontinued</strong>
-                </p>
-                <p className="text-xs text-gray-300 mb-2">
-                  The old Twitchapps token generator no longer works. Use one of these options:
-                </p>
-                
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <strong className="text-white">Option 1 - Read Only (Easiest):</strong>
-                    <p className="text-gray-300">Leave token blank to connect in read-only mode (can read chat but not send messages)</p>
-                  </div>
-                  
-                  <div>
-                    <strong className="text-white">Option 2 - Twitch CLI:</strong>
-                    <p className="text-gray-300">Install Twitch CLI and run: <code className="bg-gray-800 px-1">twitch token</code></p>
-                    <a href="https://github.com/twitchdev/twitch-cli" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300">
-                      Download Twitch CLI →
-                    </a>
-                  </div>
-                  
-                  <div>
-                    <strong className="text-white">Option 3 - Alternative Generator:</strong>
-                    <a href="https://twitchtokengenerator.com/" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300">
-                      twitchtokengenerator.com →
-                    </a>
-                    <p className="text-gray-300 mt-1">Select &quot;Bot Chat Token&quot; and authorize</p>
-                  </div>
-                </div>
               </div>
 
               <div>
