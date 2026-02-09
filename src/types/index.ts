@@ -73,13 +73,14 @@ export interface AIMessage {
   content: string;
 }
 
-// TTS Types - UPDATED with Fish Audio
+// TTS Types - UPDATED with Edge TTS
 export type TTSProvider = 
   | 'webspeech' 
   | 'elevenlabs' 
   | 'coqui-local' 
   | 'coqui-colab'
-  | 'fish-audio-colab';  // NEW!
+  | 'fish-audio-colab'
+  | 'edge-tts';  // NEW!
 
 export interface TTSConfig {
   enabled: boolean;
@@ -93,7 +94,11 @@ export interface TTSConfig {
   elevenLabsApiKey?: string;
   elevenLabsVoiceId?: string;
   elevenLabsModel?: string;
-  colabUrl?: string;  // Used for both Coqui and Fish Audio
+  colabUrl?: string;
+  // Edge TTS specific
+  edgeTTSVoice?: string;
+  edgeTTSPitch?: string;  // Format: "+5Hz" or "-10Hz"
+  edgeTTSRate?: string;   // Format: "+20%" or "-15%"
 }
 
 // STT Types
@@ -149,7 +154,7 @@ export interface AppConfig {
   };
   overlay: {
     showMessages: boolean;
-    messageDuration: number; // milliseconds
+    messageDuration: number;
     showCommands: boolean;
   };
 }
