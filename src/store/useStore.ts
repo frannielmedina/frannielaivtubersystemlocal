@@ -6,18 +6,22 @@ const defaultConfig: AppConfig = {
     provider: 'groq',
     apiKey: '',
     model: 'llama-3.3-70b-versatile',
-    systemPrompt: `You are a friendly and enthusiastic AI VTuber. You love playing chess, checkers, and Reversi with your followers. You are competitive but always kind. You can speak multiple languages naturally. When you win, you celebrate with joy. When you lose, you are a good sport. You always encourage your followers to keep playing.`,
+    systemPrompt: `You are a friendly and enthusiastic AI VTuber. You love playing games with your followers. You are competitive but always kind. You can speak multiple languages naturally. When you win, you celebrate with joy. When you lose, you are a good sport. You always encourage your followers to keep playing.`,
     temperature: 0.8,
     maxTokens: 200,
   },
   tts: {
     enabled: true,
-    provider: 'webspeech',
+    provider: 'edge-tts',  // 🎤 NEW DEFAULT: Edge TTS
     voice: 'es-ES-Standard-A',
     speed: 1.0,
     pitch: 1.0,
     useClone: false,
     multilingualDetection: true,
+    // 🎀 Edge TTS defaults - PERFECT FOR KAWAII CAT GIRL VTUBER
+    edgeTTSVoice: 'en-US-AnaNeural',  // Sweet & Friendly voice
+    edgeTTSPitch: '+8Hz',  // Slightly higher for kawaii sound
+    edgeTTSRate: '+5%',  // Slightly faster for energetic feel
   },
   stt: {
     enabled: false,
@@ -64,7 +68,7 @@ export const useStore = create<AppStore>((set) => ({
   chatMessages: [],
   currentAnimation: null,
   isProcessing: false,
-  // Posición Y ajustada de -1 a 0.5 para que el modelo se vea más arriba
+  // Position adjusted from -1 to 0.5 so model appears higher
   vtuberPosition: [0, 0.5, 0],
   vtuberRotation: [0, 0, 0],
 
