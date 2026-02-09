@@ -73,8 +73,13 @@ export interface AIMessage {
   content: string;
 }
 
-// TTS Types
-export type TTSProvider = 'webspeech' | 'elevenlabs' | 'coqui-local' | 'coqui-colab';
+// TTS Types - UPDATED with Fish Audio
+export type TTSProvider = 
+  | 'webspeech' 
+  | 'elevenlabs' 
+  | 'coqui-local' 
+  | 'coqui-colab'
+  | 'fish-audio-colab';  // NEW!
 
 export interface TTSConfig {
   enabled: boolean;
@@ -88,7 +93,7 @@ export interface TTSConfig {
   elevenLabsApiKey?: string;
   elevenLabsVoiceId?: string;
   elevenLabsModel?: string;
-  colabUrl?: string;
+  colabUrl?: string;  // Used for both Coqui and Fish Audio
 }
 
 // STT Types
