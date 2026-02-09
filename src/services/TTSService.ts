@@ -181,45 +181,181 @@ export class TTSService {
   }
 
   /**
-   * Edge TTS - High quality, free, no API key needed!
+   * Edge TTS - Using Web Speech API with enhanced voice selection
+   * FIXED: No longer uses broken external API
    */
   private async speakEdgeTTS(text: string): Promise<void> {
-    const voice = this.config.edgeTTSVoice || 'en-US-AnaNeural';
+    const voiceConfig = this.config.edgeTTSVoice || 'en-US-AnaNeural';
     const pitch = this.config.edgeTTSPitch || '+8Hz';
     const rate = this.config.edgeTTSRate || '+5%';
 
-    console.log('🎤 Edge TTS:', { voice, pitch, rate });
+    console.log('🎤 Edge TTS (Web Speech):', { voiceConfig, pitch, rate });
 
-    try {
-      // Use Edge TTS REST API directly
-      const url = 'https://edge-tts-api.vercel.app/api/tts';
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          text: text,
-          voice: voice,
-          pitch: pitch,
-          rate: rate,
-        }),
-      });
+    // Parse pitch and rate
+    const pitchValue = this.parsePitchValue(pitch);
+    const rateValue = this.parseRateValue(rate);
 
-      if (!response.ok) {
-        throw new Error(`Edge TTS API error: ${response.status}`);
-      }
+    // Use enhanced Web Speech API
+    return this.speakWebSpeechEnhanced(text, voiceConfig, pitchValue, rateValue);
+  }
 
-      const audioBlob = await response.blob();
-      return this.playAudioBlobWithLipsync(audioBlob);
+  /**
+   * Parse pitch value from Edge TTS format (+8Hz) to Web Speech format (0.5-2.0)
+   */
+  private parsePitchValue(pitchStr: string): number {
+    const match = pitchStr.match(/([+-]?\d+)/);
+    if (!match) return 1.0;
+    
+    const hz = parseInt(match[1]);
+    // Convert Hz offset to pitch multiplier (0.5 = low, 1.0 = normal, 2.0 = high)
+    // +8Hz = 1.2, +15Hz = 1.4, +20Hz = 1.5, etc.
+    return 1.0 + (hz / 40);
+  }
 
-    } catch (error) {
-      console.error('Edge TTS error, trying fallback method:', error);
-      
-      // Fallback: Use SpeechSynthesis with pitch/rate simulation
-      return this.speakWebSpeech(text);
+  /**
+   * Parse rate value from Edge TTS format (+5%) to Web Speech format (0.1-10.0)
+   */
+  private parseRateValue(rateStr: string): number {
+    const match = rateStr.match(/([+-]?\d+)/);
+    if (!match) return 1.0;
+    
+    const percent = parseInt(match[1]);
+    // Convert percentage to rate multiplier
+    return 1.0 + (percent / 100);
+  }
+
+  /**
+   * Enhanced Web Speech API with voice matching
+   */
+  private async speakWebSpeechEnhanced(
+    text: string, 
+    voiceConfig: string, 
+    pitch: number, 
+    rate: number
+  ): Promise<void> {
+    if (!this.isBrowser || !window.speechSynthesis) {
+      throw new Error('Web Speech API not available');
     }
+
+    return new Promise((resolve, reject) => {
+      // Wait for voices to load
+      const voices = window.speechSynthesis.getVoices();
+      
+      const speakWithVoices = () => {
+        const availableVoices = window.speechSynthesis.getVoices();
+        
+        // Find best matching voice
+        const selectedVoice = this.findBestVoice(availableVoices, voiceConfig);
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+          utterance.lang = selectedVoice.lang;
+          console.log('🎤 Using voice:', selectedVoice.name, selectedVoice.lang);
+        } else {
+          // Default to English
+          utterance.lang = 'en-US';
+          console.log('🎤 Using default voice');
+        }
+
+        utterance.pitch = Math.max(0.5, Math.min(2.0, pitch));
+        utterance.rate = Math.max(0.5, Math.min(2.0, rate));
+        utterance.volume = 1.0;
+
+        console.log('🎤 TTS Settings:', {
+          pitch: utterance.pitch,
+          rate: utterance.rate,
+          voice: selectedVoice?.name || 'default'
+        });
+
+        if (this.onLipsyncCallback) {
+          const estimatedDuration = text.length * 0.05;
+          const simpleLipsync: LipsyncData = {
+            phonemes: [{ phoneme: 'aa', time: 0, duration: estimatedDuration }],
+            duration: estimatedDuration
+          };
+          this.onLipsyncCallback(simpleLipsync);
+        }
+
+        utterance.onend = () => resolve();
+        utterance.onerror = (event) => reject(event);
+
+        window.speechSynthesis.speak(utterance);
+      };
+
+      // If voices aren't loaded yet, wait for them
+      if (voices.length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => {
+          speakWithVoices();
+        };
+      } else {
+        speakWithVoices();
+      }
+    });
+  }
+
+  /**
+   * Find best matching voice for Edge TTS voice name
+   */
+  private findBestVoice(voices: SpeechSynthesisVoice[], voiceConfig: string): SpeechSynthesisVoice | null {
+    if (voices.length === 0) return null;
+
+    // Edge TTS voice name mapping to Web Speech API
+    const voiceMap: Record<string, string[]> = {
+      // English (US) - Female
+      'en-US-AnaNeural': ['Samantha', 'Victoria', 'Karen', 'Moira', 'Tessa', 'Fiona'],
+      'en-US-JennyNeural': ['Samantha', 'Victoria', 'Karen'],
+      'en-US-AriaNeural': ['Samantha', 'Victoria'],
+      'en-US-MichelleNeural': ['Karen', 'Moira'],
+      'en-US-SaraNeural': ['Tessa', 'Fiona'],
+      
+      // Japanese - Female
+      'ja-JP-NanamiNeural': ['Kyoko', 'Otoya'],
+      'ja-JP-AoiNeural': ['Kyoko'],
+      'ja-JP-MayuNeural': ['Kyoko'],
+      
+      // Spanish - Female
+      'es-ES-ElviraNeural': ['Monica', 'Paulina'],
+      'es-MX-DaliaNeural': ['Paulina'],
+      
+      // French - Female
+      'fr-FR-DeniseNeural': ['Amelie', 'Thomas'],
+      
+      // German - Female
+      'de-DE-KatjaNeural': ['Anna', 'Helena'],
+    };
+
+    // Get language from voice config (e.g., 'en-US' from 'en-US-AnaNeural')
+    const langMatch = voiceConfig.match(/^([a-z]{2}-[A-Z]{2})/);
+    const targetLang = langMatch ? langMatch[1] : 'en-US';
+
+    // Try to find exact voice name match first
+    const preferredNames = voiceMap[voiceConfig] || [];
+    
+    for (const preferredName of preferredNames) {
+      const voice = voices.find(v => 
+        v.name.includes(preferredName) && 
+        v.lang.startsWith(targetLang.split('-')[0])
+      );
+      if (voice) return voice;
+    }
+
+    // Fallback: find any voice with matching language and gender (female preferred)
+    const femaleVoice = voices.find(v => 
+      v.lang.startsWith(targetLang.split('-')[0]) && 
+      (v.name.toLowerCase().includes('female') || 
+       v.name.toLowerCase().includes('woman') ||
+       !v.name.toLowerCase().includes('male'))
+    );
+    if (femaleVoice) return femaleVoice;
+
+    // Fallback: find any voice with matching language
+    const langVoice = voices.find(v => v.lang.startsWith(targetLang.split('-')[0]));
+    if (langVoice) return langVoice;
+
+    // Last resort: return first available voice
+    return voices[0];
   }
 
   private async speakElevenLabs(text: string): Promise<void> {
@@ -402,7 +538,7 @@ export class TTSService {
       }
 
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'es-ES';
+      utterance.lang = 'en-US';
       utterance.rate = this.config.speed || 1.0;
       utterance.pitch = this.config.pitch || 1.0;
       utterance.volume = 1.0;
