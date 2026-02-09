@@ -404,6 +404,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   <option value="webspeech">Web Speech API (Built-in)</option>
                   <option value="coqui-local">Coqui TTS (Local/Ngrok)</option>
                   <option value="coqui-colab">Coqui TTS (Google Colab)</option>
+                  <option value="fish-audio-colab">Fish Audio (Google Colab) 🎣 NEW!</option>
                   <option value="elevenlabs">ElevenLabs (Premium)</option>
                 </select>
               </div>
@@ -543,6 +544,89 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 </div>
               )}
 
+              {/* Fish Audio Config - NEW! */}
+              {localConfig.tts.provider === 'fish-audio-colab' && (
+                <div className="bg-gradient-to-r from-blue-900 to-purple-900 p-4 rounded border border-blue-700 space-y-3">
+                  <h4 className="text-white font-semibold flex items-center gap-2">
+                    🎣 Fish Audio Google Colab <span className="text-xs bg-green-600 px-2 py-1 rounded">NEW!</span>
+                  </h4>
+                  
+                  <div className="bg-blue-800 bg-opacity-30 p-3 rounded border border-blue-600">
+                    <p className="text-sm text-blue-200 mb-2">
+                      <strong>✨ What is Fish Audio?</strong>
+                    </p>
+                    <p className="text-xs text-gray-300">
+                      Fish Audio is a powerful voice cloning TTS that automatically uses your reference voice uploaded in Google Colab. 
+                      It provides high-quality, natural-sounding speech with automatic language detection.
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Colab Ngrok URL
+                    </label>
+                    <input
+                      type="text"
+                      value={localConfig.tts.colabUrl || ''}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, colabUrl: e.target.value },
+                        })
+                      }
+                      placeholder="https://xxxx-xx-xx-xxx-xx.ngrok-free.app"
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      📋 Paste your ngrok URL from the Fish Audio Colab notebook
+                    </p>
+                  </div>
+
+                  <div className="bg-yellow-800 bg-opacity-30 p-3 rounded border border-yellow-600">
+                    <p className="text-sm text-yellow-200 mb-2">
+                      <strong>⚠️ Important Setup Steps:</strong>
+                    </p>
+                    <ul className="text-xs text-gray-300 space-y-1 list-disc list-inside">
+                      <li>Run the Fish Audio Colab notebook (FISH_AUDIO_COLAB.ipynb)</li>
+                      <li>Upload your reference voice (10-30 seconds of clear audio)</li>
+                      <li>Copy the ngrok HTTPS URL (not HTTP!)</li>
+                      <li>Paste the URL here</li>
+                      <li>Make sure the Colab cell keeps running</li>
+                    </ul>
+                  </div>
+
+                  <div className="bg-green-800 bg-opacity-30 p-3 rounded border border-green-600">
+                    <p className="text-sm text-green-200 mb-2">
+                      <strong>✅ Features:</strong>
+                    </p>
+                    <ul className="text-xs text-gray-300 space-y-1 list-disc list-inside">
+                      <li>🎤 Automatic voice cloning from reference</li>
+                      <li>🌍 Multilingual support (auto-detected)</li>
+                      <li>🎨 Natural emotion expression</li>
+                      <li>⚡ Fast generation</li>
+                      <li>🔧 Easy setup via Google Colab</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Browser TTS Info */}
+              {localConfig.tts.provider === 'webspeech' && (
+                <div className="config-panel">
+                  <h4>ℹ️ TTS del Navegador</h4>
+                  <p>
+                    Utiliza la síntesis de voz integrada en tu navegador (Web Speech API).
+                  </p>
+                  <p>
+                    <strong>Ventajas:</strong> No requiere configuración, funciona sin internet.
+                  </p>
+                  <p>
+                    <strong>Desventajas:</strong> Calidad de voz variable según el navegador.
+                  </p>
+                </div>
+              )}
+
+              {/* Common TTS Settings */}
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
