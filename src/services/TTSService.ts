@@ -170,6 +170,9 @@ export class TTSService {
         case 'coqui-colab':
           await this.speakCoqui(text);
           break;
+        case 'fish-audio-colab':
+          await this.speakFishAudio(text);
+          break;
         default:
           await this.speakWebSpeech(text);
       }
@@ -232,7 +235,7 @@ export class TTSService {
   }
 
   private async speakCoqui(text: string): Promise<void> {
-    // ✅ Clean URL - remove trailing slashes
+    // Clean URL - remove trailing slashes
     let url = this.config.colabUrl || 'http://localhost:5000';
     url = url.replace(/\/+$/, ''); // Remove all trailing slashes
     
@@ -252,7 +255,7 @@ export class TTSService {
       body.detect_language = true;
     }
 
-    // ✅ Build headers with Ngrok bypass
+    // Build headers with Ngrok bypass
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -271,7 +274,7 @@ export class TTSService {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(body),
-        mode: 'cors', // ✅ Explicitly set CORS mode
+        mode: 'cors',
       });
 
       if (!response.ok) {
@@ -294,6 +297,85 @@ export class TTSService {
           `2. The URL is correct (check for https vs http)\n` +
           `3. CORS is enabled on the server\n` +
           `4. If using ngrok, the URL is up to date`
+        );
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Generate speech using Fish Audio (NEW!)
+   */
+  private async speakFishAudio(text: string): Promise<void> {
+    // Clean URL - remove trailing slashes
+    let url = this.config.colabUrl || 'http://localhost:5000';
+    url = url.replace(/\/+$/, ''); // Remove all trailing slashes
+    
+    const body: any = { 
+      text,
+      speed: this.config.speed || 1.0
+    };
+
+    // Fish Audio automatically uses voice cloning from the reference uploaded in Colab
+    if (this.config.multilingualDetection) {
+      body.detect_language = true;
+    }
+
+    // Build headers with Ngrok bypass
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add Ngrok bypass header if URL contains ngrok
+    if (url.includes('ngrok')) {
+      console.log('🔧 Adding Ngrok bypass header for Fish Audio');
+      headers['ngrok-skip-browser-warning'] = 'true';
+    }
+
+    console.log('🎣 Calling Fish Audio TTS:', `${url}/api/tts`);
+    console.log('📤 Headers:', headers);
+
+    try {
+      const response = await fetch(`${url}/api/tts`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(body),
+        mode: 'cors',
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        console.error('❌ Fish Audio TTS error:', response.status, error);
+        throw new Error(`Fish Audio TTS error: ${response.status} - ${error}`);
+      }
+
+      const audioBlob = await response.blob();
+      
+      // Extract emotion from X-Emotion header if present
+      const emotionHeader = response.headers.get('X-Emotion');
+      if (emotionHeader && this.onEmotionCallback) {
+        try {
+          const emotion = JSON.parse(emotionHeader);
+          this.onEmotionCallback(emotion);
+        } catch (e) {
+          console.warn('Could not parse emotion header:', e);
+        }
+      }
+      
+      return this.playAudioBlobWithLipsync(audioBlob);
+    } catch (error) {
+      console.error('❌ Fish Audio fetch error:', error);
+      
+      // Provide helpful error message
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        throw new Error(
+          `Cannot connect to Fish Audio server at ${url}. ` +
+          `Make sure:\n` +
+          `1. Google Colab notebook is running\n` +
+          `2. The ngrok URL is correct and up to date\n` +
+          `3. You copied the HTTPS URL (not HTTP)\n` +
+          `4. The Colab cell is still active`
         );
       }
       
