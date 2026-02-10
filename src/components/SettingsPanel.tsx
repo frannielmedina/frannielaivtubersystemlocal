@@ -9,7 +9,7 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-// Model options for each provider - FIXED: Replaced Mistral with GPT-4o-mini
+// Model options for each provider
 const AI_MODELS = {
   groq: [
     { value: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (Latest, Recommended)' },
@@ -21,7 +21,7 @@ const AI_MODELS = {
   openrouter: [
     { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
     { value: 'openai/gpt-4-turbo', label: 'GPT-4 Turbo' },
-    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (Fast & Smart)' }, // NEW!
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (Fast & Smart)' },
     { value: 'meta-llama/llama-3.1-70b-instruct', label: 'Llama 3.1 70B' },
     { value: 'google/gemini-pro', label: 'Gemini Pro' },
     { value: 'mistralai/mixtral-8x7b-instruct', label: 'Mixtral 8x7B' },
@@ -363,7 +363,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
             </div>
           </section>
 
-          {/* TTS Configuration - Same as before, keeping Edge TTS */}
+          {/* TTS Configuration */}
           <section>
             <h3 className="text-xl font-bold text-white mb-3">🔊 Text-to-Speech</h3>
             
@@ -398,7 +398,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                   <option value="edge-tts">Edge TTS (Free & High Quality) 🎤 Recommended!</option>
                   <option value="webspeech">Web Speech API (Built-in)</option>
                   <option value="coqui-local">Coqui TTS (Local/Ngrok)</option>
-                  <option value="coqui-colab">Coqui TTS (Google Colab)</option>
+                  <option value="coqui-colab">Coqui TTS (Google Colab) ⭐</option>
                   <option value="fish-audio-colab">Fish Audio (Google Colab) 🎣</option>
                   <option value="elevenlabs">ElevenLabs (Premium)</option>
                 </select>
@@ -421,7 +421,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                     </p>
                   </div>
                   
-                  {/* Voice Selection */}
                   <div>
                     <label className="block text-sm text-gray-300 mb-1">
                       Voice <span className="text-xs text-gray-500">(⭐ = Recommended for Kawaii)</span>
@@ -483,7 +482,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                     </select>
                   </div>
 
-                  {/* Pitch Control */}
                   <div>
                     <label className="block text-sm text-gray-300 mb-1">
                       Pitch: {localConfig.tts.edgeTTSPitch || '+8Hz'}
@@ -512,7 +510,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                     </div>
                   </div>
 
-                  {/* Rate Control */}
                   <div>
                     <label className="block text-sm text-gray-300 mb-1">
                       Rate: {localConfig.tts.edgeTTSRate || '+5%'}
@@ -543,8 +540,265 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
                 </div>
               )}
 
-              {/* Other TTS providers config (same as before) */}
-              {/* ... (keep existing ElevenLabs, Coqui, Fish Audio configs) ... */}
+              {/* ElevenLabs Config */}
+              {localConfig.tts.provider === 'elevenlabs' && (
+                <div className="bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
+                  <h4 className="text-white font-semibold">⚙️ ElevenLabs Configuration</h4>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">API Key:</label>
+                    <input
+                      type="password"
+                      placeholder="sk_..."
+                      value={localConfig.tts.elevenLabsApiKey || ''}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, elevenLabsApiKey: e.target.value },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Voice ID:</label>
+                    <input
+                      type="text"
+                      placeholder="21m00Tcm4TlvDq8ikWAM"
+                      value={localConfig.tts.elevenLabsVoiceId || ''}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, elevenLabsVoiceId: e.target.value },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Model:</label>
+                    <select
+                      value={localConfig.tts.elevenLabsModel || 'eleven_monolingual_v1'}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, elevenLabsModel: e.target.value },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600"
+                    >
+                      <option value="eleven_monolingual_v1">Monolingual v1</option>
+                      <option value="eleven_multilingual_v2">Multilingual v2</option>
+                      <option value="eleven_turbo_v2">Turbo v2 (Fast)</option>
+                    </select>
+                  </div>
+                  <small className="block text-xs text-gray-400">
+                    Get your API key and Voice ID at: <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">elevenlabs.io</a>
+                  </small>
+                </div>
+              )}
+
+              {/* Coqui TTS Local Config */}
+              {localConfig.tts.provider === 'coqui-local' && (
+                <div className="bg-gray-800 p-4 rounded border border-gray-700 space-y-3">
+                  <h4 className="text-white font-semibold">⚙️ Coqui TTS (Local Server)</h4>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Server URL:</label>
+                    <input
+                      type="text"
+                      placeholder="http://localhost:5000"
+                      value={localConfig.tts.colabUrl || 'http://localhost:5000'}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, colabUrl: e.target.value },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600 font-mono text-sm"
+                    />
+                    <small className="block text-xs text-gray-400 mt-1">
+                      Default: http://localhost:5000 (make sure your TTS server is running)
+                    </small>
+                  </div>
+                  
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={localConfig.tts.useClone || false}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, useClone: e.target.checked },
+                        })
+                      }
+                      className="w-5 h-5"
+                    />
+                    <span className="text-white">Use Voice Clone</span>
+                  </label>
+                  
+                  {localConfig.tts.useClone && (
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Voice File Path:</label>
+                      <input
+                        type="text"
+                        placeholder="/path/to/voice.wav"
+                        value={localConfig.tts.cloneVoicePath || ''}
+                        onChange={(e) =>
+                          setLocalConfig({
+                            ...localConfig,
+                            tts: { ...localConfig.tts, cloneVoicePath: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600 font-mono text-sm"
+                      />
+                      <small className="block text-xs text-gray-400 mt-1">
+                        Path to your voice sample WAV file (10-30 seconds, mono, 22050 Hz)
+                      </small>
+                    </div>
+                  )}
+                  <small className="block text-xs text-gray-400">
+                    Run the TTS server with: <code className="bg-gray-900 px-2 py-1 rounded">python backend-tts/server.py</code>
+                  </small>
+                </div>
+              )}
+
+              {/* Coqui TTS Colab/Ngrok Config - FIXED VERSION */}
+              {localConfig.tts.provider === 'coqui-colab' && (
+                <div className="bg-gradient-to-r from-purple-900 to-pink-900 p-4 rounded border border-purple-700 space-y-3">
+                  <h4 className="text-white font-semibold flex items-center gap-2">
+                    ⚙️ Coqui TTS (Google Colab + Ngrok)
+                    <span className="text-xs bg-purple-600 px-2 py-1 rounded">HIGH QUALITY</span>
+                  </h4>
+                  
+                  <div className="bg-purple-800 bg-opacity-30 p-3 rounded border border-purple-600">
+                    <p className="text-sm text-purple-200 mb-2">
+                      <strong>🚀 Running on Google Colab with Ngrok</strong>
+                    </p>
+                    <p className="text-xs text-gray-300">
+                      Use free Google Colab GPU for high-quality voice cloning with Coqui XTTS-v2!
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">
+                      Ngrok URL: <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="https://xxxx-xx-xx-xxx-xxx.ngrok-free.app"
+                      value={localConfig.tts.colabUrl || ''}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, colabUrl: e.target.value },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600 font-mono text-sm"
+                    />
+                    <small className="block text-xs text-gray-400 mt-1">
+                      ⚠️ Copy the EXACT ngrok URL from your Colab notebook (must start with https://)
+                    </small>
+                  </div>
+
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={localConfig.tts.useClone || false}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, useClone: e.target.checked },
+                        })
+                      }
+                      className="w-5 h-5"
+                    />
+                    <span className="text-white">Use Voice Clone</span>
+                  </label>
+
+                  {localConfig.tts.useClone && (
+                    <div>
+                      <label className="block text-sm text-gray-300 mb-1">Voice File Path:</label>
+                      <input
+                        type="text"
+                        placeholder="/content/my_voice.wav"
+                        value={localConfig.tts.cloneVoicePath || ''}
+                        onChange={(e) =>
+                          setLocalConfig({
+                            ...localConfig,
+                            tts: { ...localConfig.tts, cloneVoicePath: e.target.value },
+                          })
+                        }
+                        className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600 font-mono text-sm"
+                      />
+                      <small className="block text-xs text-gray-400 mt-1">
+                        Path to your voice sample on Colab (upload via Colab files panel)
+                      </small>
+                    </div>
+                  )}
+
+                  <div className="bg-gray-900 bg-opacity-50 p-3 rounded text-xs text-gray-300 space-y-2">
+                    <p className="font-semibold text-white">📝 Setup Instructions:</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2">
+                      <li>Open your Google Colab notebook with the TTS server</li>
+                      <li>Run all cells to start the server</li>
+                      <li>Find the ngrok URL in the output (looks like: https://xxxx.ngrok-free.app)</li>
+                      <li>Copy the EXACT URL and paste it above</li>
+                      <li>Don't add trailing slash at the end</li>
+                      <li>Make sure "Use Voice Clone" is enabled if you want custom voice</li>
+                    </ol>
+                  </div>
+
+                  <div className="flex items-start gap-2 bg-yellow-900 bg-opacity-30 p-3 rounded border border-yellow-700">
+                    <span className="text-yellow-400 text-xl">⚠️</span>
+                    <div className="text-xs text-yellow-200">
+                      <strong>Important:</strong> Ngrok URLs change every time you restart Colab. 
+                      You'll need to update this URL each time you start a new Colab session.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Fish Audio Colab Config */}
+              {localConfig.tts.provider === 'fish-audio-colab' && (
+                <div className="bg-gradient-to-r from-cyan-900 to-blue-900 p-4 rounded border border-cyan-700 space-y-3">
+                  <h4 className="text-white font-semibold flex items-center gap-2">
+                    ⚙️ Fish Audio (Google Colab + Ngrok) 🎣
+                  </h4>
+                  <div>
+                    <label className="block text-sm text-gray-300 mb-1">Ngrok URL:</label>
+                    <input
+                      type="text"
+                      placeholder="https://xxxx-xx-xx-xxx-xxx.ngrok-free.app"
+                      value={localConfig.tts.colabUrl || ''}
+                      onChange={(e) =>
+                        setLocalConfig({
+                          ...localConfig,
+                          tts: { ...localConfig.tts, colabUrl: e.target.value },
+                        })
+                      }
+                      className="w-full px-3 py-2 bg-gray-700 text-white rounded border border-gray-600 font-mono text-sm"
+                    />
+                    <small className="block text-xs text-gray-400 mt-1">
+                      Copy the ngrok URL from your Fish Audio Colab notebook
+                    </small>
+                  </div>
+                </div>
+              )}
+
+              {/* Web Speech Info */}
+              {localConfig.tts.provider === 'webspeech' && (
+                <div className="bg-gray-800 p-4 rounded border border-gray-700">
+                  <h4 className="text-white font-semibold mb-2">ℹ️ Web Speech API</h4>
+                  <p className="text-sm text-gray-300 mb-2">
+                    Uses your browser's built-in text-to-speech (Web Speech API).
+                  </p>
+                  <p className="text-sm text-gray-300 mb-2">
+                    <strong>Advantages:</strong> No configuration needed, works offline.
+                  </p>
+                  <p className="text-sm text-gray-300">
+                    <strong>Disadvantages:</strong> Voice quality varies by browser.
+                  </p>
+                </div>
+              )}
 
               <label className="flex items-center gap-2">
                 <input
@@ -583,7 +837,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
             </div>
           </section>
 
-          {/* STT Configuration - Same as before */}
+          {/* STT Configuration */}
           <section>
             <h3 className="text-xl font-bold text-white mb-3">🎤 Speech-to-Text</h3>
             
@@ -645,7 +899,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ isOpen, onClose })
             </div>
           </section>
 
-          {/* Twitch Configuration - Same as before */}
+          {/* Twitch Configuration */}
           <section>
             <h3 className="text-xl font-bold text-white mb-3">💬 Twitch Integration</h3>
             
