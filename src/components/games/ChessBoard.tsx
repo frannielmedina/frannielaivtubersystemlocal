@@ -1,4 +1,5 @@
 'use client';
+
 import React, { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
 import { ChessGame } from '@/games/ChessGame';
@@ -14,19 +15,52 @@ export const ChessBoard: React.FC = () => {
   const [autoRestartTimer, setAutoRestartTimer] = useState<number | null>(null);
   const [aiThinking, setAiThinking] = useState(false);
 
+  // Function to update game context for AI
+  const updateGameContextForAI = (move?: any, isAIMove?: boolean) => {
+    if (!game) return;
+
+    const updateContext = (window as any).updateGameContext;
+    if (!updateContext) return;
+
+    const context: any = {
+      game: 'chess',
+      boardState: game.getFEN(),
+      isCheck: game.isCheck(),
+      isCheckmate: game.isCheckmate(),
+      currentTurn: game.turn() === 'w' ? 'White' : 'Black',
+    };
+
+    if (move) {
+      const pieceNames: Record<string, string> = {
+        p: 'Pawn', r: 'Rook', n: 'Knight', 
+        b: 'Bishop', q: 'Queen', k: 'King'
+      };
+
+      context.lastMove = {
+        player: isAIMove ? 'AI' : 'Player',
+        from: move.from,
+        to: move.to,
+        piece: pieceNames[move.piece] || move.piece,
+        captured: !!move.captured,
+      };
+    }
+
+    console.log('♟️ Updating chess game context:', context);
+    updateContext(context);
+  };
+
   useEffect(() => {
     const newGame = new ChessGame(gameState.aiColor, async (move) => {
+      // Update context when AI moves
       setTimeout(() => {
         if (newGame.isGameOver()) {
           const chessWinner = newGame.getWinner();
           let message = '';
-          
-          // Map chess winner ('white'/'black'/'draw') to GameState winner ('player'/'ai'/'draw')
           let gameStateWinner: 'player' | 'ai' | 'draw' | null = null;
           
           if (chessWinner === 'white') {
             gameStateWinner = gameState.aiColor === 'white' ? 'ai' : 'player';
-            message = gameState.aiColor === 'white' ? 'Checkmate! I win! 👑' : 'Checkmate! You won! 🎉';
+            message = gameState.aiColor === 'white' ? 'Checkmate! I won! 👑' : 'Checkmate! You won! 🎉';
             setAnimation({ 
               type: 'emote', 
               name: gameState.aiColor === 'white' ? 'heart' : 'sad', 
@@ -34,7 +68,7 @@ export const ChessBoard: React.FC = () => {
             });
           } else if (chessWinner === 'black') {
             gameStateWinner = gameState.aiColor === 'black' ? 'ai' : 'player';
-            message = gameState.aiColor === 'black' ? 'Checkmate! I win! 👑' : 'Checkmate! You won! 🎉';
+            message = gameState.aiColor === 'black' ? 'Checkmate! I won! 👑' : 'Checkmate! You won! 🎉';
             setAnimation({ 
               type: 'emote', 
               name: gameState.aiColor === 'black' ? 'heart' : 'sad', 
@@ -56,16 +90,16 @@ export const ChessBoard: React.FC = () => {
             color: '#9333ea'
           });
         }
+
+        updateGameContextForAI(move, true);
       }, 100);
     });
     setGame(newGame);
   }, []);
 
-  // ✅ NUEVO: Este useEffect hace que la IA juegue automáticamente
   useEffect(() => {
     if (!game || aiThinking) return;
 
-    // Esperar a que el juego esté inicializado
     const initAndPlay = async () => {
       const initialized = await game.waitForInit();
       if (!initialized) {
@@ -73,15 +107,53 @@ export const ChessBoard: React.FC = () => {
         return;
       }
 
-      // Verificar si es el turno de la IA y el juego no ha terminado
       const aiPlayer = gameState.aiColor === 'white' ? 'w' : 'b';
       
       if (game.turn() === aiPlayer && !game.isGameOver()) {
         console.log('🤖 AI turn detected, making move...');
         setAiThinking(true);
 
+        // Add message before AI thinks
+        addChatMessage({
+          id: Date.now().toString(),
+          username: 'System',
+          message: '🤔 AI is thinking about the next move...',
+          timestamp: Date.now(),
+          color: '#3b82f6'
+        });
+
         try {
-          await game.makeAIMove();
+          const move = await game.makeAIMove();
+          
+          if (move) {
+            // Announce AI's move
+            const pieceNames: Record<string, string> = {
+              p: 'Pawn', r: 'Rook', n: 'Knight', 
+              b: 'Bishop', q: 'Queen', k: 'King'
+            };
+
+            let moveMessage = `🤖 AI moved ${pieceNames[move.piece] || move.piece} from ${move.from} to ${move.to}`;
+            
+            if (move.captured) {
+              moveMessage += ` and captured your ${pieceNames[move.captured] || move.captured}!`;
+            }
+            
+            if (move.isCheck && !move.isCheckmate) {
+              moveMessage += ' ⚠️ CHECK!';
+              setAnimation({ type: 'emote', name: 'surprised', duration: 2000 });
+            }
+
+            addChatMessage({
+              id: (Date.now() + 1).toString(),
+              username: 'Miko',
+              message: moveMessage,
+              timestamp: Date.now(),
+              isAI: true,
+              color: '#9333ea'
+            });
+
+            updateGameContextForAI(move, true);
+          }
         } catch (error) {
           console.error('❌ Error making AI move:', error);
           addChatMessage({
@@ -100,7 +172,6 @@ export const ChessBoard: React.FC = () => {
     initAndPlay();
   }, [game?.turn(), game?.isGameOver(), aiThinking]);
 
-  // Auto-restart after 10 seconds when game is over
   useEffect(() => {
     if (game && game.isGameOver()) {
       addChatMessage({
@@ -125,7 +196,6 @@ export const ChessBoard: React.FC = () => {
     }
   }, [game?.isGameOver()]);
 
-  // Listen for chat commands
   useEffect(() => {
     if (!game) return;
     
@@ -134,17 +204,16 @@ export const ChessBoard: React.FC = () => {
     
     const message = lastMessage.message.trim().toLowerCase();
     
-    // Chess command: !move E2 to E4
     const movePattern = /^!move\s+([a-h][1-8])\s+to\s+([a-h][1-8])$/i;
     const match = message.match(movePattern);
     
     if (match) {
       const [_, from, to] = match;
-      handleCommandMove(from, to);
+      handleCommandMove(from, to, lastMessage.username);
     }
   }, [chatMessages, game]);
 
-  const handleCommandMove = (fromNotation: string, toNotation: string) => {
+  const handleCommandMove = (fromNotation: string, toNotation: string, username: string) => {
     if (!game || aiThinking) return;
     
     const from = fromNotation.toLowerCase();
@@ -166,20 +235,37 @@ export const ChessBoard: React.FC = () => {
     const move = game.makePlayerMove(from, to);
     
     if (move) {
+      const pieceNames: Record<string, string> = {
+        p: 'Pawn', r: 'Rook', n: 'Knight', 
+        b: 'Bishop', q: 'Queen', k: 'King'
+      };
+
+      let moveMessage = `✅ ${username} moved ${pieceNames[move.piece] || move.piece} from ${fromNotation.toUpperCase()} to ${toNotation.toUpperCase()}`;
+      
+      if (move.captured) {
+        moveMessage += ` (captured ${pieceNames[move.captured] || move.captured})`;
+      }
+      
+      if (move.isCheck && !move.isCheckmate) {
+        moveMessage += ' ⚠️ CHECK!';
+      }
+      
       addChatMessage({
         id: Date.now().toString(),
         username: 'System',
-        message: `✅ Moved ${fromNotation.toUpperCase()} to ${toNotation.toUpperCase()}`,
+        message: moveMessage,
         timestamp: Date.now(),
         color: '#10b981'
       });
+      
+      updateGameContextForAI(move, false);
       setSelectedSquare(null);
       setLegalMoves([]);
     } else {
       addChatMessage({
         id: Date.now().toString(),
         username: 'System',
-        message: `❌ Invalid move: ${fromNotation.toUpperCase()} to ${toNotation.toUpperCase()}`,
+        message: `❌ Invalid move: ${fromNotation.toUpperCase()} to ${toNotation.toUpperCase()}. The piece cannot move there, or it would leave your king in check.`,
         timestamp: Date.now(),
         color: '#ef4444'
       });
@@ -223,6 +309,30 @@ export const ChessBoard: React.FC = () => {
       const move = game.makePlayerMove(from, to);
       
       if (move) {
+        const pieceNames: Record<string, string> = {
+          p: 'Pawn', r: 'Rook', n: 'Knight', 
+          b: 'Bishop', q: 'Queen', k: 'King'
+        };
+
+        let moveMessage = `✅ You moved ${pieceNames[move.piece] || move.piece} from ${from.toUpperCase()} to ${to.toUpperCase()}`;
+        
+        if (move.captured) {
+          moveMessage += ` and captured AI's ${pieceNames[move.captured] || move.captured}!`;
+        }
+        
+        if (move.isCheck && !move.isCheckmate) {
+          moveMessage += ' ⚠️ CHECK!';
+        }
+        
+        addChatMessage({
+          id: Date.now().toString(),
+          username: 'System',
+          message: moveMessage,
+          timestamp: Date.now(),
+          color: '#10b981'
+        });
+
+        updateGameContextForAI(move, false);
         setSelectedSquare(null);
         setLegalMoves([]);
       } else {
@@ -271,6 +381,8 @@ export const ChessBoard: React.FC = () => {
       isAI: true,
       color: '#9333ea'
     });
+
+    updateGameContextForAI();
   };
 
   const handleHint = () => {
@@ -279,7 +391,6 @@ export const ChessBoard: React.FC = () => {
     const board = game.getBoard();
     const turn = game.turn();
     
-    // Find a piece that can move
     for (let row = 0; row < 8; row++) {
       for (let col = 0; col < 8; col++) {
         const square = rowColToChessNotation(row, col);
@@ -330,7 +441,6 @@ export const ChessBoard: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center justify-center h-full p-4 overflow-y-auto">
-      {/* Header */}
       <div className="mb-4 flex justify-between w-full items-center flex-shrink-0">
         <h2 className="text-2xl font-bold text-white">♟️ Chess</h2>
         <div className="flex gap-2">
@@ -356,7 +466,6 @@ export const ChessBoard: React.FC = () => {
         </div>
       </div>
 
-      {/* Commands Panel */}
       {showCommands && (
         <div className="mb-4 w-full bg-gray-800 rounded-lg p-4 border border-gray-700 flex-shrink-0">
           <h3 className="text-white font-bold mb-2 flex items-center gap-2 text-sm">
@@ -380,7 +489,6 @@ export const ChessBoard: React.FC = () => {
         </div>
       )}
 
-      {/* AI Thinking Indicator */}
       {aiThinking && (
         <div className="mb-4 w-full bg-purple-900 bg-opacity-50 rounded-lg p-3 border border-purple-600 flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -390,7 +498,6 @@ export const ChessBoard: React.FC = () => {
         </div>
       )}
 
-      {/* Board */}
       <div className="grid grid-cols-8 gap-0 border-4 border-gray-700 mb-4 flex-shrink-0">
         {board.map((row, rowIdx) =>
           row.map((piece, colIdx) => {
@@ -422,7 +529,6 @@ export const ChessBoard: React.FC = () => {
         )}
       </div>
 
-      {/* Game Status */}
       <div className="text-white text-center flex-shrink-0">
         <p className="text-sm text-gray-400">
           Current Turn: {game.turn() === 'w' ? '⚪ White' : '⚫ Black'}
@@ -431,7 +537,6 @@ export const ChessBoard: React.FC = () => {
         {game.isCheck() && <p className="text-red-500 font-bold mt-2">⚠️ CHECK!</p>}
       </div>
 
-      {/* Game Over */}
       {game.isGameOver() && (
         <div className="mt-4 p-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex-shrink-0">
           <div className="text-2xl font-bold text-white text-center">
