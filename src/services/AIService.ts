@@ -1,6 +1,6 @@
 import type { AIConfig, AIMessage } from '@/types';
 
-// Game context interface
+// Game context interface - FIXED: Added winner field
 export interface GameContext {
   game: 'chess' | 'checkers' | 'reversi' | null;
   lastMove?: {
@@ -15,6 +15,7 @@ export interface GameContext {
   isCheckmate?: boolean;
   score?: { player: number; ai: number };
   currentTurn?: string;
+  winner?: 'player' | 'ai' | 'draw' | null;  // FIXED: Added this field
 }
 
 export class AIService {
@@ -22,7 +23,8 @@ export class AIService {
   private conversationHistory: AIMessage[] = [];
   private maxHistoryLength: number = 10;
   private lastRequestTime: number = 0;
-  private minRequestInterval: number = 1000; // 1 second between requests to prevent spam
+  private minRequestInterval: number = 2000; // IMPROVED: 2 seconds between requests to prevent spam
+  private pendingRequest: boolean = false; // NEW: Prevent concurrent requests
 
   constructor(config: AIConfig) {
     this.config = config;
@@ -34,7 +36,13 @@ export class AIService {
     console.log('🎯 Model:', this.config.model);
     console.log('🎮 Game Context:', gameContext);
 
-    // RATE LIMITING - prevents message spam
+    // NEW: Prevent concurrent requests
+    if (this.pendingRequest) {
+      console.log('⏸️ Request already pending, skipping...');
+      throw new Error('Request already in progress');
+    }
+
+    // IMPROVED RATE LIMITING - prevents message spam
     const now = Date.now();
     const timeSinceLastRequest = now - this.lastRequestTime;
     if (timeSinceLastRequest < this.minRequestInterval) {
@@ -42,9 +50,12 @@ export class AIService {
       console.log(`⏳ Rate limiting: waiting ${waitTime}ms to prevent spam`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
+
+    this.pendingRequest = true;
     this.lastRequestTime = Date.now();
 
     if (!this.config.apiKey) {
+      this.pendingRequest = false;
       throw new Error('API Key not configured');
     }
 
@@ -52,49 +63,64 @@ export class AIService {
     const userMessage = messages.find(m => m.role === 'user');
 
     if (!userMessage) {
+      this.pendingRequest = false;
       throw new Error('No user message provided');
     }
 
-    // ENHANCED SYSTEM PROMPT WITH GAME CONTEXT
+    // ENHANCED SYSTEM PROMPT WITH DETAILED GAME CONTEXT
     let enhancedSystemPrompt = systemMessage?.content || this.config.systemPrompt;
     
     if (gameContext && gameContext.game) {
-      enhancedSystemPrompt += `\n\n🎮 CURRENT GAME STATE:\n`;
+      enhancedSystemPrompt += `\n\n🎮 CURRENT GAME STATE - READ THIS CAREFULLY:\n`;
+      enhancedSystemPrompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
       enhancedSystemPrompt += `Game: ${gameContext.game.toUpperCase()}\n`;
       
       if (gameContext.lastMove) {
-        enhancedSystemPrompt += `Last move: ${gameContext.lastMove.player} moved `;
+        enhancedSystemPrompt += `\n📍 LAST MOVE (what just happened):\n`;
+        enhancedSystemPrompt += `   Player: ${gameContext.lastMove.player}\n`;
         if (gameContext.lastMove.piece) {
-          enhancedSystemPrompt += `${gameContext.lastMove.piece} `;
+          enhancedSystemPrompt += `   Piece: ${gameContext.lastMove.piece}\n`;
         }
-        enhancedSystemPrompt += `from ${gameContext.lastMove.from} to ${gameContext.lastMove.to}`;
+        enhancedSystemPrompt += `   From: ${gameContext.lastMove.from}\n`;
+        enhancedSystemPrompt += `   To: ${gameContext.lastMove.to}\n`;
         if (gameContext.lastMove.captured) {
-          enhancedSystemPrompt += ` (captured opponent's piece)`;
+          enhancedSystemPrompt += `   ⚔️ CAPTURED opponent's piece!\n`;
         }
-        enhancedSystemPrompt += `\n`;
       }
       
       if (gameContext.boardState) {
-        enhancedSystemPrompt += `Board position: ${gameContext.boardState}\n`;
-      }
-      
-      if (gameContext.isCheck) {
-        enhancedSystemPrompt += `⚠️ CHECK! The king is in check!\n`;
+        enhancedSystemPrompt += `\n📊 Board Position: ${gameContext.boardState}\n`;
       }
       
       if (gameContext.isCheckmate) {
-        enhancedSystemPrompt += `👑 CHECKMATE! Game over!\n`;
+        enhancedSystemPrompt += `\n👑 *** CHECKMATE! GAME OVER! ***\n`;
+        if (gameContext.winner === 'ai') {
+          enhancedSystemPrompt += `   🎉 YOU WON! Celebrate!\n`;
+        } else if (gameContext.winner === 'player') {
+          enhancedSystemPrompt += `   😔 You lost this time. Be gracious.\n`;
+        }
+      } else if (gameContext.isCheck) {
+        enhancedSystemPrompt += `\n⚠️ *** CHECK! The king is in danger! ***\n`;
       }
       
       if (gameContext.score) {
-        enhancedSystemPrompt += `Score - Player: ${gameContext.score.player}, AI: ${gameContext.score.ai}\n`;
+        enhancedSystemPrompt += `\n📈 Score:\n`;
+        enhancedSystemPrompt += `   Player: ${gameContext.score.player}\n`;
+        enhancedSystemPrompt += `   AI (You): ${gameContext.score.ai}\n`;
       }
       
       if (gameContext.currentTurn) {
-        enhancedSystemPrompt += `Current turn: ${gameContext.currentTurn}\n`;
+        enhancedSystemPrompt += `\n🎯 Current turn: ${gameContext.currentTurn}\n`;
       }
       
-      enhancedSystemPrompt += `\nRemember: You can see the exact game state above. Comment on the moves accurately!\n`;
+      if (gameContext.winner) {
+        enhancedSystemPrompt += `\n🏆 Winner: ${gameContext.winner === 'ai' ? 'YOU (AI)' : gameContext.winner === 'player' ? 'PLAYER' : 'DRAW'}\n`;
+      }
+      
+      enhancedSystemPrompt += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      enhancedSystemPrompt += `\n💡 IMPORTANT: You can see the EXACT game state above.\n`;
+      enhancedSystemPrompt += `Comment on the moves ACCURATELY based on this information!\n`;
+      enhancedSystemPrompt += `Example: "Great move moving your ${gameContext.lastMove?.piece || 'piece'} from ${gameContext.lastMove?.from || 'there'} to ${gameContext.lastMove?.to || 'there'}!"\n`;
     }
 
     const fullMessages: AIMessage[] = [
@@ -134,9 +160,11 @@ export class AIService {
         this.conversationHistory = this.conversationHistory.slice(-this.maxHistoryLength * 2);
       }
 
+      this.pendingRequest = false;
       return response;
     } catch (error) {
       console.error('❌ AI Service Error:', error);
+      this.pendingRequest = false;
       throw error;
     }
   }
