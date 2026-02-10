@@ -10,7 +10,7 @@ import { CheckersBoard } from '@/components/games/CheckersBoard';
 import { ReversiBoard } from '@/components/games/ReversiBoard';
 import { ChatPanel } from '@/components/ChatPanel';
 import { useStore } from '@/store/useStore';
-import { AIService } from '@/services/AIService';
+import { AIService, GameContext } from '@/services/AIService';
 import { TTSService } from '@/services/TTSService';
 import { TwitchService } from '@/services/TwitchService';
 import { Settings, MessageCircle, Video, Mic, X } from 'lucide-react';
@@ -27,42 +27,50 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(true);
   
-  // Auto-hide state
   const [controlsVisible, setControlsVisible] = useState(true);
   const [mouseIdleTimeout, setMouseIdleTimeout] = useState<NodeJS.Timeout | null>(null);
   
-  // Overlay messages state
   const [overlayMessages, setOverlayMessages] = useState<OverlayMessage[]>([]);
   
-  const { config, addChatMessage, setAnimation, setConfig, chatMessages } = useStore();
+  // Game context state
+  const [currentGameContext, setCurrentGameContext] = useState<GameContext>({ game: null });
+  
+  const { config, addChatMessage, setAnimation, setConfig, chatMessages, gameState } = useStore();
   
   const [aiService] = useState(() => new AIService(config.ai));
   const [ttsService] = useState(() => new TTSService(config.tts));
   const [twitchService] = useState(() => new TwitchService(config.twitch));
 
-  // Load saved config from localStorage on mount
+  // Load saved config
   useEffect(() => {
     const savedConfig = localStorage.getItem('vtuber-config');
     if (savedConfig) {
       try {
         const parsed = JSON.parse(savedConfig);
         setConfig(parsed);
-        console.log('✅ Configuración cargada:', parsed);
+        console.log('✅ Configuration loaded:', parsed);
       } catch (error) {
         console.error('❌ Error loading saved config:', error);
       }
     }
   }, [setConfig]);
 
-  // Handle overlay messages - show last message for 1 minute
+  // Update game context when game state changes
+  useEffect(() => {
+    setCurrentGameContext({
+      game: gameState.currentGame,
+      currentTurn: gameState.isPlayerTurn ? 'Player' : 'AI',
+      winner: gameState.winner,
+    });
+  }, [gameState]);
+
+  // Handle overlay messages
   useEffect(() => {
     const lastMessage = chatMessages[chatMessages.length - 1];
     if (!lastMessage) return;
 
-    // Clear previous message immediately when new one arrives
     setOverlayMessages([]);
 
-    // Add new message
     const overlayMsg: OverlayMessage = {
       id: lastMessage.id,
       username: lastMessage.username,
@@ -73,7 +81,6 @@ export default function Home() {
 
     setOverlayMessages([overlayMsg]);
 
-    // Remove after 1 minute
     const timeout = setTimeout(() => {
       setOverlayMessages([]);
     }, 60000);
@@ -81,7 +88,7 @@ export default function Home() {
     return () => clearTimeout(timeout);
   }, [chatMessages]);
 
-  // Handle mouse movement for auto-hide controls (1 minute idle)
+  // Auto-hide controls
   useEffect(() => {
     const handleMouseMove = () => {
       setControlsVisible(true);
@@ -92,7 +99,7 @@ export default function Home() {
       
       const timeout = setTimeout(() => {
         setControlsVisible(false);
-      }, 60000); // 60 seconds = 1 minute
+      }, 60000);
       
       setMouseIdleTimeout(timeout);
     };
@@ -110,7 +117,7 @@ export default function Home() {
 
   // Update services when config changes
   useEffect(() => {
-    console.log('🔄 Actualizando servicios con config:', config.ai);
+    console.log('🔄 Updating services with config:', config.ai);
     aiService.updateConfig(config.ai);
     ttsService.updateConfig(config.tts);
     
@@ -122,9 +129,9 @@ export default function Home() {
       twitchService.updateConfig(config.twitch);
       
       if (!twitchService.isConnected()) {
-        console.log('🔌 Conectando a Twitch con canal:', config.twitch.channel);
+        console.log('🔌 Connecting to Twitch with channel:', config.twitch.channel);
         twitchService.connect(handleTwitchMessage).catch(err => {
-          console.error('❌ Error conectando a Twitch:', err);
+          console.error('❌ Error connecting to Twitch:', err);
           addChatMessage({
             id: Date.now().toString(),
             username: 'System',
@@ -136,7 +143,7 @@ export default function Home() {
       }
     } else {
       if (twitchService.isConnected()) {
-        console.log('🔌 Desconectando de Twitch...');
+        console.log('🔌 Disconnecting from Twitch...');
         twitchService.disconnect();
       }
     }
@@ -149,7 +156,7 @@ export default function Home() {
   }, [config.ai, config.tts, config.twitch.enabled, config.twitch.channel, config.twitch.token]);
 
   const handleTwitchMessage = async (message: any) => {
-    console.log('💬 Mensaje de Twitch recibido:', message);
+    console.log('💬 Twitch message received:', message);
     
     addChatMessage({
       id: Date.now().toString(),
@@ -159,11 +166,15 @@ export default function Home() {
       color: message.color,
     });
 
-    await processAIResponse(message.username, message.message);
+    // Don't respond to game commands with AI - they're handled by the game boards
+    const isGameCommand = /^!(move|place)\s+/i.test(message.message);
+    if (!isGameCommand) {
+      await processAIResponse(message.username, message.message);
+    }
   };
 
   const handleDirectMessage = async (messageText: string) => {
-    console.log('💬 Mensaje directo recibido:', messageText);
+    console.log('💬 Direct message received:', messageText);
     
     addChatMessage({
       id: Date.now().toString(),
@@ -176,14 +187,16 @@ export default function Home() {
     await processAIResponse('You', messageText);
   };
 
+  // IMPROVED: Process AI response WITH game context
   const processAIResponse = async (username: string, message: string) => {
-    console.log('🤖 Procesando respuesta de IA...');
-    console.log('📝 API Key presente:', !!config.ai.apiKey);
+    console.log('🤖 Processing AI response with game context...');
+    console.log('📝 API Key present:', !!config.ai.apiKey);
     console.log('🔧 Provider:', config.ai.provider);
     console.log('🎯 Model:', config.ai.model);
+    console.log('🎮 Game Context:', currentGameContext);
 
     if (!config.ai.apiKey) {
-      console.error('❌ No API key configurada');
+      console.error('❌ No API key configured');
       addChatMessage({
         id: (Date.now() + 1).toString(),
         username: config.vtuber.name || 'VTuber',
@@ -201,11 +214,12 @@ export default function Home() {
         { role: 'user' as const, content: `${username} says: ${message}` },
       ];
 
-      console.log('📤 Enviando a API:', { provider: config.ai.provider, model: config.ai.model });
+      console.log('📤 Sending to API with game context');
       
-      const response = await aiService.generateResponse(messages);
+      // PASS GAME CONTEXT TO AI
+      const response = await aiService.generateResponse(messages, currentGameContext);
       
-      console.log('✅ Respuesta recibida:', response);
+      console.log('✅ Response received:', response);
 
       addChatMessage({
         id: (Date.now() + 1).toString(),
@@ -217,7 +231,7 @@ export default function Home() {
       });
 
       if (config.tts.enabled) {
-        console.log('🔊 Hablando respuesta...');
+        console.log('🔊 Speaking response...');
         await ttsService.speak(response);
       }
 
@@ -230,7 +244,7 @@ export default function Home() {
       });
 
     } catch (error) {
-      console.error('❌ Error procesando respuesta de IA:', error);
+      console.error('❌ Error processing AI response:', error);
       
       let errorMessage = 'Error generating response. ';
       if (error instanceof Error) {
@@ -247,7 +261,18 @@ export default function Home() {
     }
   };
 
-  const gameState = useStore((state: any) => state.gameState);
+  // Function to update game context (call this from game boards)
+  const updateGameContext = (context: Partial<GameContext>) => {
+    setCurrentGameContext(prev => ({ ...prev, ...context }));
+  };
+
+  // Make updateGameContext available globally
+  useEffect(() => {
+    (window as any).updateGameContext = updateGameContext;
+    return () => {
+      delete (window as any).updateGameContext;
+    };
+  }, []);
 
   if (config.appMode === 'collab') {
     return <CollabMode />;
@@ -279,11 +304,11 @@ export default function Home() {
       <div className={`grid h-screen transition-all duration-300 ${
         chatOpen ? 'grid-cols-12' : 'grid-cols-9'
       }`}>
-        {/* VTuber Scene - Left Side */}
+        {/* VTuber Scene */}
         <div className={`${chatOpen ? 'col-span-5' : 'col-span-5'} relative h-screen`}>
           <VTuberScene />
           
-          {/* Controls Overlay - Auto-hide after 1 minute */}
+          {/* Controls Overlay */}
           <div 
             className={`absolute top-4 right-4 flex gap-2 transition-opacity duration-500 ${
               controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -317,7 +342,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* VTuber Info - Auto-hide after 1 minute */}
+          {/* VTuber Info */}
           <div 
             className={`absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg p-4 transition-opacity duration-500 ${
               controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -346,12 +371,12 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Game Board - Center - Expands when chat is hidden */}
+        {/* Game Board */}
         <div className={`${chatOpen ? 'col-span-4' : 'col-span-4'} bg-gray-900 p-4 h-screen overflow-y-auto transition-all duration-300`}>
           {renderGame()}
         </div>
 
-        {/* Chat Panel - Right Side - Can be hidden */}
+        {/* Chat Panel */}
         {chatOpen && (
           <div className="col-span-3 h-screen transition-all duration-300">
             <ChatPanel onDirectMessage={handleDirectMessage} />
@@ -359,7 +384,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* Message Overlay - Bottom Left Corner */}
+      {/* Message Overlay */}
       {overlayMessages.length > 0 && (
         <div className="fixed bottom-4 left-4 z-40 max-w-md">
           {overlayMessages.map((msg) => (
@@ -381,10 +406,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* Settings Modal */}
       <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
       
-      {/* Mouse idle indicator - shown when controls are hidden */}
       {!controlsVisible && (
         <div className="fixed bottom-4 right-4 bg-black bg-opacity-60 px-4 py-2 rounded-full text-white text-xs animate-pulse">
           💤 Move mouse to show controls
