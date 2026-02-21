@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
-import { VRM, VRMLoaderPlugin } from '@pixiv/three-vrm';
+import { VRM, VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useStore } from '@/store/useStore';
 
@@ -123,7 +123,14 @@ function retargetClip(raw: THREE.AnimationClip, vrm: VRM): THREE.AnimationClip |
     } catch {}
   }
 
+  // Debug: log what nodes we found (first time only)
+  if (humanoidToNodeName.size > 0) {
+    const sample = [...humanoidToNodeName.entries()].slice(0, 4);
+    console.log('[VRMA] humanoidToNodeName sample:', sample);
+  }
+
   const newTracks: THREE.KeyframeTrack[] = [];
+  let logged = false;
   for (const track of raw.tracks) {
     const dot = track.name.indexOf('.');
     if (dot === -1) continue;
@@ -134,6 +141,11 @@ function retargetClip(raw: THREE.AnimationClip, vrm: VRM): THREE.AnimationClip |
     if (!humanoidName) continue;
     const nodeName = humanoidToNodeName.get(humanoidName);
     if (!nodeName) continue;
+
+    if (!logged) {
+      console.log('[VRMA] Retarget sample — track:', trackBone, '→ humanoid:', humanoidName, '→ node:', nodeName);
+      logged = true;
+    }
 
     const t = track.clone();
     t.name  = nodeName + prop;
@@ -255,7 +267,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         const loaded = gltf.userData.vrm as VRM;
         if (!loaded) { setLoadError('Invalid VRM file'); setIsLoading(false); return; }
 
-        // Do NOT call VRMUtils.removeUnnecessaryJoints — it strips bone nodes
+        VRMUtils.removeUnnecessaryJoints(gltf.scene);
         loaded.scene.traverse((o) => { o.frustumCulled = false; });
         loaded.scene.rotation.y = Math.PI;
 
