@@ -184,6 +184,15 @@ function loadParsedClip(url: string): Promise<ParsedClip | null> {
   });
 }
 
+// Mirror quaternion across Y axis: negate X and Z.
+// VRMA stores rotations for a model facing -Z.
+// Since scene.rotation.y = Math.PI (model faces camera at +Z),
+// we must mirror the normalized bone quaternions so animations
+// appear correct visually (not left-right flipped).
+function mirrorQuatY(q: THREE.Quaternion): THREE.Quaternion {
+  return new THREE.Quaternion(-q.x, q.y, -q.z, q.w).normalize();
+}
+
 function applyParsedClip(clip: ParsedClip, vrm: VRM, t: number) {
   const h = vrm.humanoid;
   if (!h) return;
@@ -192,7 +201,7 @@ function applyParsedClip(clip: ParsedClip, vrm: VRM, t: number) {
     if (!node) continue;
     if (bt.quatValues) {
       sampleQuat(bt.times, bt.quatValues, t, _q);
-      node.quaternion.copy(_q);
+      node.quaternion.copy(mirrorQuatY(_q));
     }
     if (bt.posValues && bt.humanoidName === 'hips') {
       sampleVec3(bt.times, bt.posValues, t, _v3);
@@ -295,9 +304,11 @@ const VRMModel: React.FC<VRMModelProps> = ({ modelPath, onLoaded, onError }) => 
       VRMUtils.removeUnnecessaryJoints(gltf.scene);
       loaded.scene.traverse((o) => { o.frustumCulled = false; });
 
-      // ── NO rotation on scene — parent group handles the PI rotation ──
-      // This means normalized bones = world bones, no compensation needed.
-      // VRMA animations apply correctly with no mirroring.
+      // ── Set scene rotation so model faces camera ──
+      // scene.rotation.y = PI makes model face +Z (camera).
+      // Normalized bone animations are pre-mirrored in applyParsedClip()
+      // so they display correctly despite the scene rotation.
+      loaded.scene.rotation.y = Math.PI;
 
       // Set idle arms
       const h = loaded.humanoid;
@@ -435,11 +446,11 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
       : { backgroundColor: bg.style };
 
   // The key insight: wrap VRMModel in a group rotated Math.PI on Y.
-  // The model faces +Z, the group rotates it to face the camera at +Z.
-  // scene.rotation is ZERO inside VRMModel, so normalized bones work correctly.
+  // vrm.scene.rotation.y = Math.PI so model faces camera.
+  // mirrorQuatY() in applyParsedClip corrects animation directions.
   const modelRotation: [number, number, number] = [
     vtuberRotation[0],
-    vtuberRotation[1] + Math.PI, // add PI here instead of in scene
+    vtuberRotation[1], // PI rotation is now on vrm.scene directly
     vtuberRotation[2],
   ];
 
