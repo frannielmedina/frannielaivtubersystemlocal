@@ -251,6 +251,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   const currentActionRef = useRef<THREE.AnimationAction | null>(null);
   const modelLoadedRef   = useRef(false);
   const blinkRef         = useRef({ lastBlink: 0, isBlinking: false, blinkStart: 0 });
+  const hipsBaseYRef     = useRef<number>(0); // Y position of hips at rest
   const currentAnimation = useStore((s) => s.currentAnimation);
 
   // ── Load VRM ─────────────────────────────────────────────────
@@ -282,6 +283,10 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           if (lLA) lLA.rotation.set(0, 0, 0.3);
           if (rLA) rLA.rotation.set(0, 0, -0.3);
         }
+
+        // Capture resting hips Y to prevent floating during animations
+        const hipsNode = loaded.humanoid?.getNormalizedBoneNode('hips' as any);
+        if (hipsNode) hipsBaseYRef.current = hipsNode.position.y;
 
         // Mixer on vrm.scene — normalized bone nodes live here
         mixerRef.current = new THREE.AnimationMixer(loaded.scene);
@@ -353,6 +358,13 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   useFrame((state, delta) => {
     if (!vrm) return;
     mixerRef.current?.update(delta);
+
+    // Clamp hips Y to base position to prevent floating during animations
+    if (currentActionRef.current && vrm.humanoid) {
+      const hipsNode = vrm.humanoid.getNormalizedBoneNode('hips' as any);
+      if (hipsNode) hipsNode.position.y = hipsBaseYRef.current;
+    }
+
     vrm.update(delta);
     if (!currentActionRef.current) {
       applyIdleAnimation(vrm, state.clock.elapsedTime);
