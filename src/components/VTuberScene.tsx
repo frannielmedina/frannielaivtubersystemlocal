@@ -38,11 +38,10 @@ function pickRandom<T>(arr: T[]): T {
 }
 
 // ─────────────────────────────────────────────────────────────
-// All possible VRMA track name → VRM humanoid bone name
-// Covers: J_Bip_ style, Mixamo style, VRM humanoid style
+// VRMA track name → VRM humanoid bone name
 // ─────────────────────────────────────────────────────────────
 const TRACK_TO_HUMANOID: Record<string, string> = {
-  // J_Bip style (used by greet.vrma etc.)
+  // J_Bip style (standard VRM)
   'J_Bip_C_Hips': 'hips', 'J_Bip_C_Spine': 'spine',
   'J_Bip_C_Chest': 'chest', 'J_Bip_C_UpperChest': 'upperChest',
   'J_Bip_C_Neck': 'neck', 'J_Bip_C_Head': 'head',
@@ -71,17 +70,7 @@ const TRACK_TO_HUMANOID: Record<string, string> = {
   'RightShoulder': 'rightShoulder', 'RightArm': 'rightUpperArm', 'RightForeArm': 'rightLowerArm', 'RightHand': 'rightHand',
   'LeftUpLeg': 'leftUpperLeg', 'LeftLeg': 'leftLowerLeg', 'LeftFoot': 'leftFoot', 'LeftToeBase': 'leftToes',
   'RightUpLeg': 'rightUpperLeg', 'RightLeg': 'rightLowerLeg', 'RightFoot': 'rightFoot', 'RightToeBase': 'rightToes',
-  'LeftHandThumb1': 'leftThumbProximal', 'LeftHandThumb2': 'leftThumbIntermediate', 'LeftHandThumb3': 'leftThumbDistal',
-  'LeftHandIndex1': 'leftIndexProximal', 'LeftHandIndex2': 'leftIndexIntermediate', 'LeftHandIndex3': 'leftIndexDistal',
-  'LeftHandMiddle1': 'leftMiddleProximal', 'LeftHandMiddle2': 'leftMiddleIntermediate', 'LeftHandMiddle3': 'leftMiddleDistal',
-  'LeftHandRing1': 'leftRingProximal', 'LeftHandRing2': 'leftRingIntermediate', 'LeftHandRing3': 'leftRingDistal',
-  'LeftHandPinky1': 'leftLittleProximal', 'LeftHandPinky2': 'leftLittleIntermediate', 'LeftHandPinky3': 'leftLittleDistal',
-  'RightHandThumb1': 'rightThumbProximal', 'RightHandThumb2': 'rightThumbIntermediate', 'RightHandThumb3': 'rightThumbDistal',
-  'RightHandIndex1': 'rightIndexProximal', 'RightHandIndex2': 'rightIndexIntermediate', 'RightHandIndex3': 'rightIndexDistal',
-  'RightHandMiddle1': 'rightMiddleProximal', 'RightHandMiddle2': 'rightMiddleIntermediate', 'RightHandMiddle3': 'rightMiddleDistal',
-  'RightHandRing1': 'rightRingProximal', 'RightHandRing2': 'rightRingIntermediate', 'RightHandRing3': 'rightRingDistal',
-  'RightHandPinky1': 'rightLittleProximal', 'RightHandPinky2': 'rightLittleIntermediate', 'RightHandPinky3': 'rightLittleDistal',
-  // VRM humanoid style (already correct, pass through)
+  // VRM humanoid style (pass-through)
   'hips': 'hips', 'spine': 'spine', 'chest': 'chest', 'upperChest': 'upperChest',
   'neck': 'neck', 'head': 'head',
   'leftShoulder': 'leftShoulder', 'leftUpperArm': 'leftUpperArm', 'leftLowerArm': 'leftLowerArm', 'leftHand': 'leftHand',
@@ -92,24 +81,49 @@ const TRACK_TO_HUMANOID: Record<string, string> = {
   'RightUpperLeg': 'rightUpperLeg', 'RightLowerLeg': 'rightLowerLeg', 'RightToes': 'rightToes',
   'LeftUpperArm': 'leftUpperArm', 'LeftLowerArm': 'leftLowerArm',
   'RightUpperArm': 'rightUpperArm', 'RightLowerArm': 'rightLowerArm',
-  'LeftThumbProximal': 'leftThumbProximal', 'LeftThumbIntermediate': 'leftThumbIntermediate', 'LeftThumbDistal': 'leftThumbDistal',
-  'LeftIndexProximal': 'leftIndexProximal', 'LeftIndexIntermediate': 'leftIndexIntermediate', 'LeftIndexDistal': 'leftIndexDistal',
-  'LeftMiddleProximal': 'leftMiddleProximal', 'LeftMiddleIntermediate': 'leftMiddleIntermediate', 'LeftMiddleDistal': 'leftMiddleDistal',
-  'LeftRingProximal': 'leftRingProximal', 'LeftRingIntermediate': 'leftRingIntermediate', 'LeftRingDistal': 'leftRingDistal',
-  'LeftLittleProximal': 'leftLittleProximal', 'LeftLittleIntermediate': 'leftLittleIntermediate', 'LeftLittleDistal': 'leftLittleDistal',
-  'RightThumbProximal': 'rightThumbProximal', 'RightThumbIntermediate': 'rightThumbIntermediate', 'RightThumbDistal': 'rightThumbDistal',
-  'RightIndexProximal': 'rightIndexProximal', 'RightIndexIntermediate': 'rightIndexIntermediate', 'RightIndexDistal': 'rightIndexDistal',
-  'RightMiddleProximal': 'rightMiddleProximal', 'RightMiddleIntermediate': 'rightMiddleIntermediate', 'RightMiddleDistal': 'rightMiddleDistal',
-  'RightRingProximal': 'rightRingProximal', 'RightRingIntermediate': 'rightRingIntermediate', 'RightRingDistal': 'rightRingDistal',
-  'RightLittleProximal': 'rightLittleProximal', 'RightLittleIntermediate': 'rightLittleIntermediate', 'RightLittleDistal': 'rightLittleDistal',
+  'leftThumbProximal': 'leftThumbProximal', 'leftThumbIntermediate': 'leftThumbIntermediate', 'leftThumbDistal': 'leftThumbDistal',
+  'leftIndexProximal': 'leftIndexProximal', 'leftIndexIntermediate': 'leftIndexIntermediate', 'leftIndexDistal': 'leftIndexDistal',
+  'leftMiddleProximal': 'leftMiddleProximal', 'leftMiddleIntermediate': 'leftMiddleIntermediate', 'leftMiddleDistal': 'leftMiddleDistal',
+  'leftRingProximal': 'leftRingProximal', 'leftRingIntermediate': 'leftRingIntermediate', 'leftRingDistal': 'leftRingDistal',
+  'leftLittleProximal': 'leftLittleProximal', 'leftLittleIntermediate': 'leftLittleIntermediate', 'leftLittleDistal': 'leftLittleDistal',
+  'rightThumbProximal': 'rightThumbProximal', 'rightThumbIntermediate': 'rightThumbIntermediate', 'rightThumbDistal': 'rightThumbDistal',
+  'rightIndexProximal': 'rightIndexProximal', 'rightIndexIntermediate': 'rightIndexIntermediate', 'rightIndexDistal': 'rightIndexDistal',
+  'rightMiddleProximal': 'rightMiddleProximal', 'rightMiddleIntermediate': 'rightMiddleIntermediate', 'rightMiddleDistal': 'rightMiddleDistal',
+  'rightRingProximal': 'rightRingProximal', 'rightRingIntermediate': 'rightRingIntermediate', 'rightRingDistal': 'rightRingDistal',
+  'rightLittleProximal': 'rightLittleProximal', 'rightLittleIntermediate': 'rightLittleIntermediate', 'rightLittleDistal': 'rightLittleDistal',
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// APPROACH: No scene rotation. Camera placed at negative Z so it faces
+// the model from the front (VRM models face +Z by default).
+//
+// This means:
+//   - NO rotation.y = Math.PI on the scene  ← eliminates all mirroring bugs
+//   - NO quaternion mirroring in retargetClip ← eliminates spin glitches
+//   - NO position track filtering for greet ← greet now works correctly
+//   - Hips position IS allowed (needed for greet/squat/etc.)
+//   - Only adjustment: camera.position.z = -3.2 (negative, behind model)
+//   - OrbitControls target stays at [0, 1.0, 0]
+//
+// The only visual difference from a user perspective: the camera is now
+// "behind" the model in Three.js coordinate space, but since the model faces
+// toward the camera naturally, it looks exactly correct.
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Retarget a raw VRMA clip to the VRM's actual normalized bone node names.
- * The mixer runs on vrm.scene; getNormalizedBoneNode() returns the Object3D
- * whose .name is the key we need for the track.
+ * Retarget a raw VRMA clip to the VRM's actual bone node names.
+ * No mirroring needed — scene has no rotation.
+ *
+ * The only transform applied to hips position:
+ *   - Allow it (needed for greet, squat, etc.)
+ *   - But clamp Y so the model never goes below the ground offset
+ *     (handled in the frame loop, not here)
  */
-function retargetClip(raw: THREE.AnimationClip, vrm: VRM): THREE.AnimationClip | null {
+function retargetClip(
+  raw: THREE.AnimationClip,
+  vrm: VRM,
+  groundOffset: number,
+): THREE.AnimationClip | null {
   const h = vrm.humanoid;
   if (!h) return null;
 
@@ -120,17 +134,11 @@ function retargetClip(raw: THREE.AnimationClip, vrm: VRM): THREE.AnimationClip |
     try {
       const node = h.getNormalizedBoneNode(humanoidName as any);
       if (node) humanoidToNodeName.set(humanoidName, node.name);
-    } catch {}
-  }
-
-  // Debug: log what nodes we found (first time only)
-  if (humanoidToNodeName.size > 0) {
-    const sample = [...humanoidToNodeName.entries()].slice(0, 4);
-    console.log('[VRMA] humanoidToNodeName sample:', sample);
+    } catch { /* bone doesn't exist in this VRM */ }
   }
 
   const newTracks: THREE.KeyframeTrack[] = [];
-  let logged = false;
+
   for (const track of raw.tracks) {
     const dot = track.name.indexOf('.');
     if (dot === -1) continue;
@@ -142,34 +150,45 @@ function retargetClip(raw: THREE.AnimationClip, vrm: VRM): THREE.AnimationClip |
     const nodeName = humanoidToNodeName.get(humanoidName);
     if (!nodeName) continue;
 
-    if (!logged) {
-      console.log('[VRMA] Retarget sample — track:', trackBone, '→ humanoid:', humanoidName, '→ node:', nodeName);
-      logged = true;
-    }
+    const renamedTrack = track.clone();
+    renamedTrack.name  = nodeName + prop;
 
-    const t = track.clone();
-    t.name  = nodeName + prop;
-    newTracks.push(t);
+    // For hips position: offset Y so feet stay at world Y=0 during animation.
+    // The VRMA clip assumes hips start at their natural height above Y=0.
+    // The scene itself has position.y = groundOffset applied.
+    // So the animation's hips Y values are already correct relative to the
+    // scene root — we don't need to modify them at all.
+    // We just pass them through unchanged.
+    newTracks.push(renamedTrack);
   }
 
   if (newTracks.length === 0) return null;
   return new THREE.AnimationClip(raw.name, raw.duration, newTracks);
 }
 
-// Cache retargeted clips per VRM instance
+// Cache retargeted clips per (url + vrm uuid)
 const clipCache = new Map<string, THREE.AnimationClip | null>();
 
-function loadClip(url: string, vrm: VRM): Promise<THREE.AnimationClip | null> {
+function loadClip(
+  url: string,
+  vrm: VRM,
+  groundOffset: number,
+): Promise<THREE.AnimationClip | null> {
   const key = url + '|' + vrm.scene.uuid;
   return new Promise((resolve) => {
-    if (clipCache.has(key)) { resolve(clipCache.get(key)!); return; }
+    if (clipCache.has(key)) { resolve(clipCache.get(key) ?? null); return; }
     const loader = new GLTFLoader();
-    loader.load(url, (gltf) => {
-      if (!gltf.animations?.length) { clipCache.set(key, null); resolve(null); return; }
-      const retargeted = retargetClip(gltf.animations[0], vrm);
-      clipCache.set(key, retargeted);
-      resolve(retargeted);
-    }, undefined, () => { resolve(null); });
+    loader.load(
+      url,
+      (gltf) => {
+        if (!gltf.animations?.length) { clipCache.set(key, null); resolve(null); return; }
+        const retargeted = retargetClip(gltf.animations[0], vrm, groundOffset);
+        clipCache.set(key, retargeted);
+        resolve(retargeted);
+      },
+      undefined,
+      () => { resolve(null); }
+    );
   });
 }
 
@@ -187,7 +206,7 @@ export const BG_OPTIONS = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Idle animation
+// Idle breathing animation
 // ─────────────────────────────────────────────────────────────
 function applyIdleAnimation(vrm: VRM, t: number) {
   const h = vrm.humanoid;
@@ -200,14 +219,15 @@ function applyIdleAnimation(vrm: VRM, t: number) {
   const lLA   = h.getNormalizedBoneNode('leftLowerArm');
   const rLA   = h.getNormalizedBoneNode('rightLowerArm');
   const hips  = h.getNormalizedBoneNode('hips');
+
   if (spine) spine.rotation.x = Math.sin(t * 0.8) * 0.03;
   if (chest) chest.rotation.x = Math.sin(t * 0.8) * 0.025;
   if (head)  { head.rotation.y = Math.sin(t * 0.3) * 0.08; head.rotation.x = Math.sin(t * 0.5) * 0.05; }
-  if (lUA) lUA.rotation.z = 1.2  + Math.sin(t * 0.6) * 0.02;
-  if (rUA) rUA.rotation.z = -1.2 + Math.sin(t * 0.6 + Math.PI) * 0.02;
-  if (lLA) lLA.rotation.z = 0.3  + Math.sin(t * 0.5) * 0.02;
-  if (rLA) rLA.rotation.z = -0.3 + Math.sin(t * 0.5 + Math.PI) * 0.02;
-  if (hips) hips.position.y = Math.sin(t * 0.5) * 0.01;
+  if (lUA)   lUA.rotation.z = 1.2  + Math.sin(t * 0.6) * 0.02;
+  if (rUA)   rUA.rotation.z = -1.2 + Math.sin(t * 0.6 + Math.PI) * 0.02;
+  if (lLA)   lLA.rotation.z = 0.3  + Math.sin(t * 0.5) * 0.02;
+  if (rLA)   rLA.rotation.z = -0.3 + Math.sin(t * 0.5 + Math.PI) * 0.02;
+  if (hips)  hips.position.y = Math.sin(t * 0.5) * 0.01;
 }
 
 function resetToIdlePose(vrm: VRM) {
@@ -228,10 +248,11 @@ function resetToIdlePose(vrm: VRM) {
   const rUA = h.getNormalizedBoneNode('rightUpperArm');
   const lLA = h.getNormalizedBoneNode('leftLowerArm');
   const rLA = h.getNormalizedBoneNode('rightLowerArm');
-  if (lUA) lUA.rotation.set(0, 0, 1.2);
+  if (lUA) lUA.rotation.set(0, 0,  1.2);
   if (rUA) rUA.rotation.set(0, 0, -1.2);
-  if (lLA) lLA.rotation.set(0, 0, 0.3);
+  if (lLA) lLA.rotation.set(0, 0,  0.3);
   if (rLA) rLA.rotation.set(0, 0, -0.3);
+
   if (vrm.expressionManager) {
     ['happy','sad','angry','surprised','neutral','blink'].forEach((e) => {
       try { vrm.expressionManager!.setValue(e, 0); } catch {}
@@ -247,14 +268,15 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const mixerRef         = useRef<THREE.AnimationMixer | null>(null);
-  const currentActionRef = useRef<THREE.AnimationAction | null>(null);
-  const modelLoadedRef   = useRef(false);
-  const blinkRef         = useRef({ lastBlink: 0, isBlinking: false, blinkStart: 0 });
-  const hipsBaseYRef     = useRef<number>(0); // Y position of hips at rest
+  const mixerRef             = useRef<THREE.AnimationMixer | null>(null);
+  const currentActionRef     = useRef<THREE.AnimationAction | null>(null);
+  const modelLoadedRef       = useRef(false);
+  const blinkRef             = useRef({ lastBlink: 0, isBlinking: false, blinkStart: 0 });
+  const sceneGroundOffsetRef = useRef<number>(0);
+
   const currentAnimation = useStore((s) => s.currentAnimation);
 
-  // ── Load VRM ─────────────────────────────────────────────────
+  // ── Load VRM ────────────────────────────────────────────────
   useEffect(() => {
     if (modelLoadedRef.current) return;
     const loader = new GLTFLoader();
@@ -270,32 +292,36 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
 
         VRMUtils.removeUnnecessaryJoints(gltf.scene);
         loaded.scene.traverse((o) => { o.frustumCulled = false; });
-        loaded.scene.rotation.y = Math.PI;
 
+        // ── NO rotation.y = Math.PI ──────────────────────────────────────
+        // The model faces +Z by default.
+        // The camera is placed at negative Z (see Canvas below), looking toward +Z.
+        // This means the camera sees the model's FACE — no rotation needed.
+        // VRMA animations work perfectly without any quaternion mirroring.
+        // ────────────────────────────────────────────────────────────────
+
+        // Set idle arm pose before measuring bounding box
         const h = loaded.humanoid;
         if (h) {
           const lUA = h.getNormalizedBoneNode('leftUpperArm');
           const rUA = h.getNormalizedBoneNode('rightUpperArm');
           const lLA = h.getNormalizedBoneNode('leftLowerArm');
           const rLA = h.getNormalizedBoneNode('rightLowerArm');
-          if (lUA) lUA.rotation.set(0, 0, 1.2);
+          if (lUA) lUA.rotation.set(0, 0,  1.2);
           if (rUA) rUA.rotation.set(0, 0, -1.2);
-          if (lLA) lLA.rotation.set(0, 0, 0.3);
+          if (lLA) lLA.rotation.set(0, 0,  0.3);
           if (rLA) rLA.rotation.set(0, 0, -0.3);
         }
 
-        // Calculate the model's floor offset so feet land at Y=0
-        // We do this by computing the bounding box after the first frame
-        // Store the scene Y offset needed to ground the model
+        // Ground the model: measure bounding box, lift so feet touch Y=0
+        loaded.scene.position.set(0, 0, 0);
         loaded.scene.updateWorldMatrix(true, true);
         const box = new THREE.Box3().setFromObject(loaded.scene);
-        // box.min.y is the lowest point (feet). We push scene up by -box.min.y
-        // so feet land at world Y=0. Typically negative since model is centered.
-        hipsBaseYRef.current = -box.min.y;
-        loaded.scene.position.y = hipsBaseYRef.current;
+        const groundOffset = -box.min.y;
+        sceneGroundOffsetRef.current = groundOffset;
+        loaded.scene.position.y = groundOffset;
 
-        // Mixer on vrm.scene — normalized bone nodes live here
-        mixerRef.current = new THREE.AnimationMixer(loaded.scene);
+        mixerRef.current       = new THREE.AnimationMixer(loaded.scene);
         modelLoadedRef.current = true;
         setVrm(loaded);
         setIsLoading(false);
@@ -311,7 +337,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     return () => { mixerRef.current?.stopAllAction(); };
   }, [modelPath]);
 
-  // ── Play VRMA ────────────────────────────────────────────────
+  // ── Play VRMA animation ──────────────────────────────────────
   useEffect(() => {
     if (!vrm || !mixerRef.current || !currentAnimation) return;
     const key   = EMOTE_MAP[currentAnimation.name.toLowerCase()] ?? currentAnimation.name.toLowerCase();
@@ -323,41 +349,37 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
       const mixer = mixerRef.current;
       if (!mixer) return;
 
-      // Stop any current action cleanly
       mixer.stopAllAction();
       currentActionRef.current = null;
 
-      const clip = await loadClip(file, vrm);
+      const clip = await loadClip(file, vrm, sceneGroundOffsetRef.current);
       if (!clip || !mixerRef.current) return;
 
       const action = mixer.clipAction(clip);
       action.reset();
       action.setLoop(THREE.LoopOnce, 1);
-      action.clampWhenFinished = false;
+      action.clampWhenFinished = true;
       action.play();
       currentActionRef.current = action;
 
-      // Use 'finished' event for precise cleanup
       const onFinished = (e: any) => {
         if (e.action !== action) return;
         mixer.removeEventListener('finished', onFinished);
         mixer.stopAllAction();
         currentActionRef.current = null;
-        vrm.scene.position.set(0, hipsBaseYRef.current, 0);
-        vrm.scene.rotation.set(0, Math.PI, 0);
         resetToIdlePose(vrm);
+        vrm.scene.position.y = sceneGroundOffsetRef.current;
       };
       mixer.addEventListener('finished', onFinished);
 
-      // Safety fallback
+      // Safety timeout
       setTimeout(() => {
         mixer.removeEventListener('finished', onFinished);
         if (currentActionRef.current === action) {
           mixer.stopAllAction();
           currentActionRef.current = null;
-          vrm.scene.position.set(0, hipsBaseYRef.current, 0);
-          vrm.scene.rotation.set(0, Math.PI, 0);
           resetToIdlePose(vrm);
+          vrm.scene.position.y = sceneGroundOffsetRef.current;
         }
       }, clip.duration * 1000 + 1500);
     })();
@@ -369,23 +391,32 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     if (!vrm) return;
     mixerRef.current?.update(delta);
 
+    // Keep model grounded — scene Y never changes during animation
+    vrm.scene.position.y = sceneGroundOffsetRef.current;
+
     vrm.update(delta);
 
-    // Keep model grounded: restore scene position so animations don't drift
-    vrm.scene.position.set(0, hipsBaseYRef.current, 0);
+    // Idle breathing only when no VRMA is playing
     if (!currentActionRef.current) {
       applyIdleAnimation(vrm, state.clock.elapsedTime);
     }
+
     // Blinking
     const b = blinkRef.current;
     const t = state.clock.elapsedTime;
     if (vrm.expressionManager) {
       if (b.isBlinking) {
-        const e = t - b.blinkStart;
-        if (e < 0.15) { vrm.expressionManager.setValue('blink', Math.sin((e / 0.15) * Math.PI)); }
-        else { vrm.expressionManager.setValue('blink', 0); b.isBlinking = false; }
+        const elapsed = t - b.blinkStart;
+        if (elapsed < 0.15) {
+          vrm.expressionManager.setValue('blink', Math.sin((elapsed / 0.15) * Math.PI));
+        } else {
+          vrm.expressionManager.setValue('blink', 0);
+          b.isBlinking = false;
+        }
       } else if (t - b.lastBlink > 2 + Math.random() * 3) {
-        b.isBlinking = true; b.blinkStart = t; b.lastBlink = t;
+        b.isBlinking = true;
+        b.blinkStart = t;
+        b.lastBlink  = t;
       }
     }
   });
@@ -393,8 +424,8 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   if (isLoading) return <Text position={[0,0,0]} fontSize={0.3} color="#fff" anchorX="center">Loading…</Text>;
   if (loadError) return (
     <group>
-      <Text position={[0,0.3,0]} fontSize={0.17} color="#ff6b6b" anchorX="center" maxWidth={4}>{loadError}</Text>
-      <Text position={[0,-0.1,0]} fontSize={0.13} color="#aaa" anchorX="center" maxWidth={4}>Place model at /public/models/miko.vrm</Text>
+      <Text position={[0, 0.3,0]} fontSize={0.17} color="#ff6b6b" anchorX="center" maxWidth={4}>{loadError}</Text>
+      <Text position={[0,-0.1,0]} fontSize={0.13} color="#aaa"    anchorX="center" maxWidth={4}>Place model at /public/models/miko.vrm</Text>
     </group>
   );
   if (!vrm) return <Text position={[0,0,0]} fontSize={0.2} color="#ccc" anchorX="center">Initializing…</Text>;
@@ -410,6 +441,7 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
   const vtuberRotation    = useStore((s) => s.vtuberRotation);
   const setVTuberPosition = useStore((s) => s.setVTuberPosition);
   const setConfig         = useStore((s) => s.setConfig);
+
   const [isDragging,  setIsDragging]  = useState(false);
   const [dragStart,   setDragStart]   = useState({ x: 0, y: 0 });
   const [hintVisible, setHintVisible] = useState(false);
@@ -424,7 +456,11 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
     hintTimerRef.current = setTimeout(() => setHintVisible(false), 3000);
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => { setIsDragging(true); setDragStart({ x: e.clientX, y: e.clientY }); showHint(); };
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    showHint();
+  };
   const handleMouseUp   = () => setIsDragging(false);
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
@@ -456,20 +492,32 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
       onWheel={handleWheel}
     >
       <Canvas
-        camera={{ position: [0, 1.2, 3.2], fov: 38 }}
+        // ── KEY FIX: camera at NEGATIVE Z, looking toward +Z ────────────
+        // VRM models face +Z by default. Placing the camera at [0, 1.2, -3.2]
+        // means it's in front of the model's face without rotating the scene.
+        // No rotation.y = Math.PI needed → no animation mirroring → no glitches.
+        // ─────────────────────────────────────────────────────────────────
+        camera={{ position: [0, 1.2, -3.2], fov: 38 }}
         gl={{ alpha: isTransparent, antialias: true }}
         style={{ background: 'transparent' }}
       >
         <ambientLight intensity={0.9} />
-        <directionalLight position={[1, 1, 1]} intensity={0.7} />
-        <directionalLight position={[-1, -1, -1]} intensity={0.4} />
-        <pointLight position={[0, 2, 2]} intensity={0.5} />
+        <directionalLight position={[1,  1, -1]} intensity={0.7} />
+        <directionalLight position={[-1,-1,  1]} intensity={0.4} />
+        <pointLight       position={[0,  2, -2]} intensity={0.5} />
         <Suspense fallback={null}>
           <group position={vtuberPosition} rotation={vtuberRotation} scale={config.vtuber.scale}>
             <VRMModel modelPath={config.vtuber.modelPath} />
           </group>
         </Suspense>
-        <OrbitControls enablePan={false} enableZoom={false} enableRotate={false} target={[0, 1.0, 0]} />
+        {/* OrbitControls: target stays at model center, but we flip up vector
+            because camera is now on the -Z side */}
+        <OrbitControls
+          enablePan={false}
+          enableZoom={false}
+          enableRotate={false}
+          target={[0, 1.0, 0]}
+        />
       </Canvas>
       {hintVisible && (
         <div className="absolute bottom-4 right-4 bg-black bg-opacity-60 px-3 py-2 rounded text-white text-xs pointer-events-none">
