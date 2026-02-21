@@ -275,8 +275,6 @@ interface VRMModelProps {
 }
 const VRMModel: React.FC<VRMModelProps> = ({ modelPath, onLoaded, onError }) => {
   const [vrm,       setVrm]       = useState<VRM | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
   const modelLoadedRef       = useRef(false);
   const blinkRef             = useRef({ lastBlink: 0, isBlinking: false, blinkStart: 0 });
   const sceneGroundOffsetRef = useRef<number>(0);
@@ -291,11 +289,10 @@ const VRMModel: React.FC<VRMModelProps> = ({ modelPath, onLoaded, onError }) => 
     const loader = new GLTFLoader();
     loader.register((p) => new VRMLoaderPlugin(p));
     setIsLoading(true);
-    setLoadError(null);
 
     loader.load(modelPath, (gltf) => {
       const loaded = gltf.userData.vrm as VRM;
-      if (!loaded) { onError?.('Invalid VRM file'); setIsLoading(false); return; }
+      if (!loaded) { onError?.('Invalid VRM file'); return; }
 
       VRMUtils.removeUnnecessaryJoints(gltf.scene);
       loaded.scene.traverse((o) => { o.frustumCulled = false; });
@@ -328,13 +325,11 @@ const VRMModel: React.FC<VRMModelProps> = ({ modelPath, onLoaded, onError }) => 
 
       modelLoadedRef.current = true;
       setVrm(loaded);
-      setIsLoading(false);
       onLoaded?.();
     }, undefined, (err) => {
       const msg = err instanceof Error ? err.message : String(err);
       const display = msg.includes('404') ? `Model not found: ${modelPath}` : msg;
       onError?.(display);
-      setIsLoading(false);
       modelLoadedRef.current = false;
     });
   }, [modelPath]);
