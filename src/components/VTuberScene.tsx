@@ -38,114 +38,27 @@ function pickRandom<T>(arr: T[]): T {
 }
 
 // ─────────────────────────────────────────────────────────────
-// VRMA Loader with diagnostic retargeting
+// VRMA Loader
 //
-// The key insight: .vrma files use VRM humanoid bone names as track
-// prefixes (e.g. "hips.quaternion", "leftUpperArm.quaternion").
-// These need to map to the actual Object3D node names inside vrm.scene.
-// We build a lookup by querying getNormalizedBoneNode() for every bone.
+// VRMA tracks use the ACTUAL node names from the VRM file
+// (e.g. "J_Bip_C_Hips", "J_Bip_L_UpperArm").
+// The AnimationMixer.clipAction() searches for nodes by name
+// inside the root object passed to new AnimationMixer(root).
+//
+// Since vrm.scene contains all those nodes, the mixer WILL find
+// them automatically — no remapping needed at all!
+//
+// The only issue previously was "skipped 71 tracks" which means
+// only 20 tracks matched. That's because we were previously trying
+// to remap from humanoid names → node names, but the tracks already
+// HAD the real node names. Fix: use clips directly, zero remapping.
 // ─────────────────────────────────────────────────────────────
 
-const VRM_BONE_NAMES = [
-  'hips','spine','chest','upperChest','neck','head',
-  'leftEye','rightEye','jaw',
-  'leftShoulder','leftUpperArm','leftLowerArm','leftHand',
-  'rightShoulder','rightUpperArm','rightLowerArm','rightHand',
-  'leftUpperLeg','leftLowerLeg','leftFoot','leftToes',
-  'rightUpperLeg','rightLowerLeg','rightFoot','rightToes',
-  'leftThumbMetacarpal','leftThumbProximal','leftThumbDistal',
-  'leftIndexProximal','leftIndexIntermediate','leftIndexDistal',
-  'leftMiddleProximal','leftMiddleIntermediate','leftMiddleDistal',
-  'leftRingProximal','leftRingIntermediate','leftRingDistal',
-  'leftLittleProximal','leftLittleIntermediate','leftLittleDistal',
-  'rightThumbMetacarpal','rightThumbProximal','rightThumbDistal',
-  'rightIndexProximal','rightIndexIntermediate','rightIndexDistal',
-  'rightMiddleProximal','rightMiddleIntermediate','rightMiddleDistal',
-  'rightRingProximal','rightRingIntermediate','rightRingDistal',
-  'rightLittleProximal','rightLittleIntermediate','rightLittleDistal',
-];
-
-// Returns map: "humanoidBoneName" -> actual THREE node name in scene
-function buildBoneMap(vrm: VRM): Map<string, string> {
-  const map = new Map<string, string>();
-  const h = vrm.humanoid;
-  if (!h) return map;
-
-  for (const boneName of VRM_BONE_NAMES) {
-    try {
-      const node = h.getNormalizedBoneNode(boneName as any);
-      if (node && node.name) {
-        map.set(boneName, node.name);
-      }
-    } catch {}
-  }
-  return map;
-}
-
-// Retarget clip: remap track names from humanoid bone names → real node names
-// Also handles the case where tracks already use the real node name
-function retargetClip(
-  clip: THREE.AnimationClip,
-  boneMap: Map<string, string>,
-  vrm: VRM
-): THREE.AnimationClip {
-  // First pass: collect all node names in the scene for fallback matching
-  const sceneNodeNames = new Set<string>();
-  vrm.scene.traverse((obj) => sceneNodeNames.add(obj.name));
-
-  const remapped: THREE.KeyframeTrack[] = [];
-  const skipped: string[] = [];
-
-  for (const track of clip.tracks) {
-    const dotIdx = track.name.indexOf('.');
-    if (dotIdx === -1) { remapped.push(track); continue; }
-
-    const trackBone = track.name.substring(0, dotIdx);
-    const property  = track.name.substring(dotIdx);
-
-    // 1. Direct match in boneMap (humanoidBoneName -> nodeName)
-    const nodeName = boneMap.get(trackBone);
-    if (nodeName) {
-      const t = track.clone();
-      t.name = nodeName + property;
-      remapped.push(t);
-      continue;
-    }
-
-    // 2. Track bone name already matches a real scene node
-    if (sceneNodeNames.has(trackBone)) {
-      remapped.push(track);
-      continue;
-    }
-
-    // 3. Not found — skip
-    skipped.push(trackBone);
-  }
-
-  if (remapped.length === 0) {
-    // Diagnostic: log what bones the VRMA uses vs what the VRM has
-    console.warn('[VRMA] RETARGET FAILED for', clip.name);
-    console.warn('[VRMA] VRMA bone names (first 10):', clip.tracks.slice(0,10).map(t => t.name.split('.')[0]));
-    console.warn('[VRMA] VRM bone map (first 10):', [...boneMap.entries()].slice(0,10));
-    // Return raw clip as last resort (will show THREE warnings but won't crash)
-    return clip;
-  }
-
-  if (skipped.length > 0) {
-    console.log('[VRMA] Skipped', skipped.length, 'tracks (bones not in VRM)');
-  }
-
-  return new THREE.AnimationClip(clip.name, clip.duration, remapped);
-}
-
-// Cache: url+vrmUUID → retargeted clip
 const clipCache = new Map<string, THREE.AnimationClip>();
 
-function loadVRMAClip(url: string, vrm: VRM): Promise<THREE.AnimationClip | null> {
+function loadVRMAClip(url: string): Promise<THREE.AnimationClip | null> {
   return new Promise((resolve) => {
-    const key = url + '§' + vrm.scene.uuid;
-    if (clipCache.has(key)) { resolve(clipCache.get(key)!); return; }
-
+    if (clipCache.has(url)) { resolve(clipCache.get(url)!); return; }
     const loader = new GLTFLoader();
     loader.load(
       url,
@@ -155,12 +68,9 @@ function loadVRMAClip(url: string, vrm: VRM): Promise<THREE.AnimationClip | null
           resolve(null);
           return;
         }
-        const raw = gltf.animations[0];
-        console.log('[VRMA] Loaded', url, '| tracks:', raw.tracks.length, '| sample:', raw.tracks.slice(0,3).map(t => t.name));
-        const boneMap    = buildBoneMap(vrm);
-        const retargeted = retargetClip(raw, boneMap, vrm);
-        clipCache.set(key, retargeted);
-        resolve(retargeted);
+        const clip = gltf.animations[0];
+        clipCache.set(url, clip);
+        resolve(clip);
       },
       undefined,
       (err) => { console.warn('[VRMA] Load error', url, err); resolve(null); }
@@ -182,7 +92,7 @@ export const BG_OPTIONS = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Idle animation (bone-based, no VRMA needed)
+// Idle animation (bone-based, no VRMA)
 // ─────────────────────────────────────────────────────────────
 function applyIdleAnimation(vrm: VRM, t: number) {
   const h = vrm.humanoid;
@@ -208,9 +118,14 @@ function applyIdleAnimation(vrm: VRM, t: number) {
 function resetToIdlePose(vrm: VRM) {
   const h = vrm.humanoid;
   if (!h) return;
-  const bones = ['spine','chest','head','hips','leftUpperArm','rightUpperArm','leftLowerArm','rightLowerArm',
-    'leftUpperLeg','rightUpperLeg','leftLowerLeg','rightLowerLeg','leftFoot','rightFoot'];
-  bones.forEach((n) => {
+  const allBones = [
+    'hips','spine','chest','upperChest','neck','head',
+    'leftShoulder','leftUpperArm','leftLowerArm','leftHand',
+    'rightShoulder','rightUpperArm','rightLowerArm','rightHand',
+    'leftUpperLeg','leftLowerLeg','leftFoot','leftToes',
+    'rightUpperLeg','rightLowerLeg','rightFoot','rightToes',
+  ];
+  allBones.forEach((n) => {
     const b = h.getNormalizedBoneNode(n as any);
     if (b) { b.rotation.set(0, 0, 0); b.position.set(0, 0, 0); }
   });
@@ -262,7 +177,6 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         loaded.scene.traverse((o) => { o.frustumCulled = false; });
         loaded.scene.rotation.y = Math.PI;
 
-        // Set idle arm pose
         const h = loaded.humanoid;
         if (h) {
           const lUA = h.getNormalizedBoneNode('leftUpperArm');
@@ -275,7 +189,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           if (rLA) rLA.rotation.set(0, 0, -0.3);
         }
 
-        // Mixer on vrm.scene (normalized bones live here)
+        // Create mixer on vrm.scene — all J_Bip nodes live here
         mixerRef.current       = new THREE.AnimationMixer(loaded.scene);
         modelLoadedRef.current = true;
         setVrm(loaded);
@@ -305,30 +219,31 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     (async () => {
       if (!mixerRef.current) return;
 
-      // Fade out current action
+      // Fade out current
       if (currentActionRef.current) {
         currentActionRef.current.fadeOut(0.3);
         currentActionRef.current = null;
       }
 
-      const clip = await loadVRMAClip(file, vrm);
+      const clip = await loadVRMAClip(file);
       if (!clip || !mixerRef.current) return;
 
       const action = mixerRef.current.clipAction(clip);
       action.reset();
       action.setLoop(THREE.LoopOnce, 1);
-      action.clampWhenFinished = true;
+      action.clampWhenFinished = false; // don't freeze on last frame
       action.fadeIn(0.3).play();
       currentActionRef.current = action;
 
-      const dur = currentAnimation.duration ?? clip.duration * 1000;
+      // Use clip's actual duration so animation plays fully
+      const dur = clip.duration * 1000;
       setTimeout(() => {
         if (currentActionRef.current === action) {
           action.fadeOut(0.5);
           currentActionRef.current = null;
         }
         resetToIdlePose(vrm);
-      }, dur);
+      }, dur + 200); // small buffer after clip ends
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAnimation]);
@@ -339,7 +254,6 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     mixerRef.current?.update(delta);
     vrm.update(delta);
 
-    // Only drive idle bones when no VRMA is playing
     if (!currentActionRef.current) {
       applyIdleAnimation(vrm, state.clock.elapsedTime);
     }
@@ -349,9 +263,9 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     const t = state.clock.elapsedTime;
     if (vrm.expressionManager) {
       if (b.isBlinking) {
-        const e = t - b.blinkStart;
-        if (e < 0.15) {
-          vrm.expressionManager.setValue('blink', Math.sin((e / 0.15) * Math.PI));
+        const elapsed = t - b.blinkStart;
+        if (elapsed < 0.15) {
+          vrm.expressionManager.setValue('blink', Math.sin((elapsed / 0.15) * Math.PI));
         } else {
           vrm.expressionManager.setValue('blink', 0);
           b.isBlinking = false;
@@ -362,7 +276,6 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     }
   });
 
-  // ── Render ───────────────────────────────────────────────────
   if (isLoading) return (
     <Text position={[0,0,0]} fontSize={0.3} color="#fff" anchorX="center">Loading…</Text>
   );
@@ -379,7 +292,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Main VTuberScene export
+// Main VTuberScene
 // ─────────────────────────────────────────────────────────────
 export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purple' }) => {
   const config            = useStore((s) => s.config);
@@ -402,11 +315,7 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
     hintTimerRef.current = setTimeout(() => setHintVisible(false), 3000);
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-    showHint();
-  };
+  const handleMouseDown = (e: React.MouseEvent) => { setIsDragging(true); setDragStart({ x: e.clientX, y: e.clientY }); showHint(); };
   const handleMouseUp   = () => setIsDragging(false);
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
@@ -453,7 +362,6 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
         </Suspense>
         <OrbitControls enablePan={false} enableZoom={false} enableRotate={false} target={[0, 0.7, 0]} />
       </Canvas>
-
       {hintVisible && (
         <div className="absolute bottom-4 right-4 bg-black bg-opacity-60 px-3 py-2 rounded text-white text-xs pointer-events-none">
           🖱️ Drag to move · Scroll to zoom
