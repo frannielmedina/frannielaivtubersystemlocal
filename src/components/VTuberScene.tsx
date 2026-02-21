@@ -359,13 +359,19 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     if (!vrm) return;
     mixerRef.current?.update(delta);
 
-    // Clamp hips Y to base position to prevent floating during animations
+    vrm.update(delta);
+
+    // After VRM update, offset the whole scene so feet stay on ground.
+    // We measure how much the hips moved up from rest, then shift scene down by that amount.
     if (currentActionRef.current && vrm.humanoid) {
       const hipsNode = vrm.humanoid.getNormalizedBoneNode('hips' as any);
-      if (hipsNode) hipsNode.position.y = hipsBaseYRef.current;
+      if (hipsNode) {
+        const hipsDelta = hipsNode.position.y - hipsBaseYRef.current;
+        vrm.scene.position.y = -hipsDelta;
+      }
+    } else {
+      vrm.scene.position.y = 0;
     }
-
-    vrm.update(delta);
     if (!currentActionRef.current) {
       applyIdleAnimation(vrm, state.clock.elapsedTime);
     }
