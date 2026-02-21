@@ -40,19 +40,145 @@ function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// Load a .vrma file and return its first AnimationClip using plain GLTFLoader
-function loadVRMAClip(url: string): Promise<THREE.AnimationClip | null> {
+// Mixamo/BVH bone name → VRM normalized humanoid bone name
+// VRM bones are accessed via humanoid.getNormalizedBoneNode(vrmName)
+// but the actual THREE node names inside vrm.scene depend on the model.
+// Strategy: build a map from vrm.scene node names, then remap VRMA tracks.
+const MIXAMO_TO_VRM: Record<string, string> = {
+  // Hips / spine
+  Hips:           'hips',
+  Spine:          'spine',
+  Spine1:         'chest',
+  Spine2:         'upperChest',
+  Neck:           'neck',
+  Head:           'head',
+  // Left arm
+  LeftShoulder:   'leftShoulder',
+  LeftArm:        'leftUpperArm',
+  LeftForeArm:    'leftLowerArm',
+  LeftHand:       'leftHand',
+  // Right arm
+  RightShoulder:  'rightShoulder',
+  RightArm:       'rightUpperArm',
+  RightForeArm:   'rightLowerArm',
+  RightHand:      'rightHand',
+  // Left leg
+  LeftUpLeg:      'leftUpperLeg',
+  LeftLeg:        'leftLowerLeg',
+  LeftFoot:       'leftFoot',
+  LeftToeBase:    'leftToes',
+  // Right leg
+  RightUpLeg:     'rightUpperLeg',
+  RightLeg:       'rightLowerLeg',
+  RightFoot:      'rightFoot',
+  RightToeBase:   'rightToes',
+  // Left fingers
+  LeftHandThumb1:  'leftThumbMetacarpal',
+  LeftHandThumb2:  'leftThumbProximal',
+  LeftHandThumb3:  'leftThumbDistal',
+  LeftHandIndex1:  'leftIndexProximal',
+  LeftHandIndex2:  'leftIndexIntermediate',
+  LeftHandIndex3:  'leftIndexDistal',
+  LeftHandMiddle1: 'leftMiddleProximal',
+  LeftHandMiddle2: 'leftMiddleIntermediate',
+  LeftHandMiddle3: 'leftMiddleDistal',
+  LeftHandRing1:   'leftRingProximal',
+  LeftHandRing2:   'leftRingIntermediate',
+  LeftHandRing3:   'leftRingDistal',
+  LeftHandPinky1:  'leftLittleProximal',
+  LeftHandPinky2:  'leftLittleIntermediate',
+  LeftHandPinky3:  'leftLittleDistal',
+  // Right fingers
+  RightHandThumb1:  'rightThumbMetacarpal',
+  RightHandThumb2:  'rightThumbProximal',
+  RightHandThumb3:  'rightThumbDistal',
+  RightHandIndex1:  'rightIndexProximal',
+  RightHandIndex2:  'rightIndexIntermediate',
+  RightHandIndex3:  'rightIndexDistal',
+  RightHandMiddle1: 'rightMiddleProximal',
+  RightHandMiddle2: 'rightMiddleIntermediate',
+  RightHandMiddle3: 'rightMiddleDistal',
+  RightHandRing1:   'rightRingProximal',
+  RightHandRing2:   'rightRingIntermediate',
+  RightHandRing3:   'rightRingDistal',
+  RightHandPinky1:  'rightLittleProximal',
+  RightHandPinky2:  'rightLittleIntermediate',
+  RightHandPinky3:  'rightLittleDistal',
+};
+
+/**
+ * Build a map: vrmHumanoidBoneName → actual THREE.Object3D name inside vrm.scene
+ * This lets us remap VRMA track names → real node names.
+ */
+function buildVRMBoneNameMap(vrm: VRM): Record<string, string> {
+  const map: Record<string, string> = {};
+  const h = vrm.humanoid;
+  if (!h) return map;
+  // All VRM humanoid bone names we care about
+  const boneNames = Object.values(MIXAMO_TO_VRM);
+  for (const boneName of boneNames) {
+    try {
+      // getNormalizedBoneNode returns the normalized (rest-pose corrected) node
+      const node = h.getNormalizedBoneNode(boneName as any);
+      if (node) map[boneName] = node.name;
+    } catch {}
+  }
+  return map;
+}
+
+/**
+ * Remap animation clip track names from Mixamo/BVH names to actual VRM node names.
+ * Tracks that can't be mapped are dropped.
+ */
+function remapClipToVRM(clip: THREE.AnimationClip, vrm: VRM): THREE.AnimationClip | null {
+  const vrmBoneMap = buildVRMBoneNameMap(vrm); // vrmBoneName → node.name
+  const newTracks: THREE.KeyframeTrack[] = [];
+
+  for (const track of clip.tracks) {
+    // Track name format: "BoneName.property" or "BoneName.property[index]"
+    const dotIdx = track.name.indexOf('.');
+    if (dotIdx === -1) continue;
+    const mixamoName = track.name.substring(0, dotIdx);
+    const property   = track.name.substring(dotIdx); // e.g. ".quaternion"
+
+    // Skip end bones and other non-humanoid tracks
+    if (mixamoName.endsWith('_end')) continue;
+
+    const vrmBoneName = MIXAMO_TO_VRM[mixamoName];
+    if (!vrmBoneName) continue; // not in our map → skip
+
+    const nodeName = vrmBoneMap[vrmBoneName];
+    if (!nodeName) continue; // VRM doesn't have this bone → skip
+
+    // Clone the track with the correct node name
+    const newTrack = track.clone();
+    newTrack.name = nodeName + property;
+    newTracks.push(newTrack);
+  }
+
+  if (newTracks.length === 0) {
+    console.warn('[VRMA] No tracks could be remapped for', clip.name);
+    return null;
+  }
+
+  return new THREE.AnimationClip(clip.name, clip.duration, newTracks);
+}
+
+// Load a .vrma file and remap its bones to match the VRM model
+function loadVRMAClip(url: string, vrm: VRM): Promise<THREE.AnimationClip | null> {
   return new Promise((resolve) => {
     const loader = new GLTFLoader();
     loader.load(
       url,
       (gltf) => {
-        if (gltf.animations && gltf.animations.length > 0) {
-          resolve(gltf.animations[0]);
-        } else {
+        if (!gltf.animations || gltf.animations.length === 0) {
           console.warn('[VRMA] No animations found in', url);
           resolve(null);
+          return;
         }
+        const rawClip    = gltf.animations[0];
+        const remapped   = remapClipToVRM(rawClip, vrm);
+        resolve(remapped);
       },
       undefined,
       (err) => {
@@ -190,7 +316,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         currentActionRef.current.fadeOut(0.3);
         currentActionRef.current = null;
       }
-      const clip = await loadVRMAClip(file);
+      const clip = await loadVRMAClip(file, vrm);
       if (!clip || !mixerRef.current) return;
       const action = mixerRef.current.clipAction(clip);
       action.reset();
