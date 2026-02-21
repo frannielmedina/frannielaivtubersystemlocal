@@ -309,28 +309,42 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     const file = pickRandom(files);
 
     (async () => {
-      if (!mixerRef.current) return;
-      if (currentActionRef.current) {
-        currentActionRef.current.fadeOut(0.3);
-        currentActionRef.current = null;
-      }
+      const mixer = mixerRef.current;
+      if (!mixer) return;
+
+      // Stop any current action cleanly
+      mixer.stopAllAction();
+      currentActionRef.current = null;
+
       const clip = await loadClip(file, vrm);
       if (!clip || !mixerRef.current) return;
 
-      const action = mixerRef.current.clipAction(clip);
+      const action = mixer.clipAction(clip);
       action.reset();
       action.setLoop(THREE.LoopOnce, 1);
-      action.clampWhenFinished = false;
-      action.fadeIn(0.3).play();
+      action.clampWhenFinished = true;
+      action.play();
       currentActionRef.current = action;
 
-      setTimeout(() => {
-        if (currentActionRef.current === action) {
-          action.fadeOut(0.5);
-          currentActionRef.current = null;
-        }
+      // Use 'finished' event for precise cleanup
+      const onFinished = (e: any) => {
+        if (e.action !== action) return;
+        mixer.removeEventListener('finished', onFinished);
+        mixer.stopAllAction();
+        currentActionRef.current = null;
         resetToIdlePose(vrm);
-      }, clip.duration * 1000 + 200);
+      };
+      mixer.addEventListener('finished', onFinished);
+
+      // Safety fallback
+      setTimeout(() => {
+        mixer.removeEventListener('finished', onFinished);
+        if (currentActionRef.current === action) {
+          mixer.stopAllAction();
+          currentActionRef.current = null;
+          resetToIdlePose(vrm);
+        }
+      }, clip.duration * 1000 + 1500);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAnimation]);
