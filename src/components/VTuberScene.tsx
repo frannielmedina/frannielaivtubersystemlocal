@@ -423,7 +423,7 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
       onWheel={handleWheel}
     >
       <Canvas
-        camera={{ position: [0, 0.7, 2.8], fov: 45 }}
+        camera={{ position: [0, 0.9, 3.5], fov: 40 }}
         gl={{ alpha: isTransparent, antialias: true }}
         style={{ background: 'transparent' }}
       >
@@ -436,7 +436,7 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
             <VRMModel modelPath={config.vtuber.modelPath} />
           </group>
         </Suspense>
-        <OrbitControls enablePan={false} enableZoom={false} enableRotate={false} target={[0, 0.7, 0]} />
+        <OrbitControls enablePan={false} enableZoom={false} enableRotate={false} target={[0, 0.8, 0]} />
       </Canvas>
       {hintVisible && (
         <div className="absolute bottom-4 right-4 bg-black bg-opacity-60 px-3 py-2 rounded text-white text-xs pointer-events-none">
