@@ -284,9 +284,15 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           if (rLA) rLA.rotation.set(0, 0, -0.3);
         }
 
-        // Capture resting hips Y to prevent floating during animations
-        const hipsNode = loaded.humanoid?.getNormalizedBoneNode('hips' as any);
-        if (hipsNode) hipsBaseYRef.current = hipsNode.position.y;
+        // Calculate the model's floor offset so feet land at Y=0
+        // We do this by computing the bounding box after the first frame
+        // Store the scene Y offset needed to ground the model
+        loaded.scene.updateWorldMatrix(true, true);
+        const box = new THREE.Box3().setFromObject(loaded.scene);
+        // box.min.y is the lowest point (feet). We push scene up by -box.min.y
+        // so feet land at world Y=0. Typically negative since model is centered.
+        hipsBaseYRef.current = -box.min.y;
+        loaded.scene.position.y = hipsBaseYRef.current;
 
         // Mixer on vrm.scene — normalized bone nodes live here
         mixerRef.current = new THREE.AnimationMixer(loaded.scene);
@@ -361,17 +367,8 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
 
     vrm.update(delta);
 
-    // After VRM update, offset the whole scene so feet stay on ground.
-    // We measure how much the hips moved up from rest, then shift scene down by that amount.
-    if (currentActionRef.current && vrm.humanoid) {
-      const hipsNode = vrm.humanoid.getNormalizedBoneNode('hips' as any);
-      if (hipsNode) {
-        const hipsDelta = hipsNode.position.y - hipsBaseYRef.current;
-        vrm.scene.position.y = -hipsDelta;
-      }
-    } else {
-      vrm.scene.position.y = 0;
-    }
+    // Keep model grounded: restore scene Y offset so feet stay at floor
+    vrm.scene.position.y = hipsBaseYRef.current;
     if (!currentActionRef.current) {
       applyIdleAnimation(vrm, state.clock.elapsedTime);
     }
@@ -455,7 +452,7 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
       onWheel={handleWheel}
     >
       <Canvas
-        camera={{ position: [0, 0.9, 3.5], fov: 40 }}
+        camera={{ position: [0, 1.2, 3.2], fov: 38 }}
         gl={{ alpha: isTransparent, antialias: true }}
         style={{ background: 'transparent' }}
       >
@@ -468,7 +465,7 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
             <VRMModel modelPath={config.vtuber.modelPath} />
           </group>
         </Suspense>
-        <OrbitControls enablePan={false} enableZoom={false} enableRotate={false} target={[0, 0.8, 0]} />
+        <OrbitControls enablePan={false} enableZoom={false} enableRotate={false} target={[0, 1.0, 0]} />
       </Canvas>
       {hintVisible && (
         <div className="absolute bottom-4 right-4 bg-black bg-opacity-60 px-3 py-2 rounded text-white text-xs pointer-events-none">
