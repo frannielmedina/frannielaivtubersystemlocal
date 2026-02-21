@@ -288,8 +288,6 @@ const VRMModel: React.FC<VRMModelProps> = ({ modelPath, onLoaded, onError }) => 
     if (modelLoadedRef.current) return;
     const loader = new GLTFLoader();
     loader.register((p) => new VRMLoaderPlugin(p));
-    setIsLoading(true);
-
     loader.load(modelPath, (gltf) => {
       const loaded = gltf.userData.vrm as VRM;
       if (!loaded) { onError?.('Invalid VRM file'); return; }
