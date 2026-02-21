@@ -39,10 +39,9 @@ function pickRandom<T>(arr: T[]): T {
 
 // ─────────────────────────────────────────────────────────────
 // All possible VRMA track name → VRM humanoid bone name
-// Covers: J_Bip_ style, Mixamo style, VRM humanoid style
 // ─────────────────────────────────────────────────────────────
 const TRACK_TO_HUMANOID: Record<string, string> = {
-  // J_Bip style (used by greet.vrma etc.)
+  // J_Bip style
   'J_Bip_C_Hips': 'hips', 'J_Bip_C_Spine': 'spine',
   'J_Bip_C_Chest': 'chest', 'J_Bip_C_UpperChest': 'upperChest',
   'J_Bip_C_Neck': 'neck', 'J_Bip_C_Head': 'head',
@@ -71,17 +70,7 @@ const TRACK_TO_HUMANOID: Record<string, string> = {
   'RightShoulder': 'rightShoulder', 'RightArm': 'rightUpperArm', 'RightForeArm': 'rightLowerArm', 'RightHand': 'rightHand',
   'LeftUpLeg': 'leftUpperLeg', 'LeftLeg': 'leftLowerLeg', 'LeftFoot': 'leftFoot', 'LeftToeBase': 'leftToes',
   'RightUpLeg': 'rightUpperLeg', 'RightLeg': 'rightLowerLeg', 'RightFoot': 'rightFoot', 'RightToeBase': 'rightToes',
-  'LeftHandThumb1': 'leftThumbProximal', 'LeftHandThumb2': 'leftThumbIntermediate', 'LeftHandThumb3': 'leftThumbDistal',
-  'LeftHandIndex1': 'leftIndexProximal', 'LeftHandIndex2': 'leftIndexIntermediate', 'LeftHandIndex3': 'leftIndexDistal',
-  'LeftHandMiddle1': 'leftMiddleProximal', 'LeftHandMiddle2': 'leftMiddleIntermediate', 'LeftHandMiddle3': 'leftMiddleDistal',
-  'LeftHandRing1': 'leftRingProximal', 'LeftHandRing2': 'leftRingIntermediate', 'LeftHandRing3': 'leftRingDistal',
-  'LeftHandPinky1': 'leftLittleProximal', 'LeftHandPinky2': 'leftLittleIntermediate', 'LeftHandPinky3': 'leftLittleDistal',
-  'RightHandThumb1': 'rightThumbProximal', 'RightHandThumb2': 'rightThumbIntermediate', 'RightHandThumb3': 'rightThumbDistal',
-  'RightHandIndex1': 'rightIndexProximal', 'RightHandIndex2': 'rightIndexIntermediate', 'RightHandIndex3': 'rightIndexDistal',
-  'RightHandMiddle1': 'rightMiddleProximal', 'RightHandMiddle2': 'rightMiddleIntermediate', 'RightHandMiddle3': 'rightMiddleDistal',
-  'RightHandRing1': 'rightRingProximal', 'RightHandRing2': 'rightRingIntermediate', 'RightHandRing3': 'rightRingDistal',
-  'RightHandPinky1': 'rightLittleProximal', 'RightHandPinky2': 'rightLittleIntermediate', 'RightHandPinky3': 'rightLittleDistal',
-  // VRM humanoid style (already correct, pass through)
+  // VRM humanoid style (pass-through)
   'hips': 'hips', 'spine': 'spine', 'chest': 'chest', 'upperChest': 'upperChest',
   'neck': 'neck', 'head': 'head',
   'leftShoulder': 'leftShoulder', 'leftUpperArm': 'leftUpperArm', 'leftLowerArm': 'leftLowerArm', 'leftHand': 'leftHand',
@@ -106,8 +95,11 @@ const TRACK_TO_HUMANOID: Record<string, string> = {
 
 /**
  * Retarget a raw VRMA clip to the VRM's actual normalized bone node names.
- * The mixer runs on vrm.scene; getNormalizedBoneNode() returns the Object3D
- * whose .name is the key we need for the track.
+ * 
+ * KEY FIX: We strip the ROOT/hips POSITION tracks from the clip so the animation
+ * only drives rotations. The scene-level Y offset handles grounding instead.
+ * This prevents the "floating" and "crossed legs" issues caused by conflicting
+ * position data between the VRMA clip and our manual scene.position.y grounding.
  */
 function retargetClip(raw: THREE.AnimationClip, vrm: VRM): THREE.AnimationClip | null {
   const h = vrm.humanoid;
@@ -123,28 +115,35 @@ function retargetClip(raw: THREE.AnimationClip, vrm: VRM): THREE.AnimationClip |
     } catch {}
   }
 
-  // Debug: log what nodes we found (first time only)
-  if (humanoidToNodeName.size > 0) {
-    const sample = [...humanoidToNodeName.entries()].slice(0, 4);
-    console.log('[VRMA] humanoidToNodeName sample:', sample);
-  }
+  // Get the hips node name so we can identify position tracks on it
+  let hipsNodeName: string | undefined;
+  try {
+    const hipsNode = h.getNormalizedBoneNode('hips' as any);
+    if (hipsNode) hipsNodeName = hipsNode.name;
+  } catch {}
 
   const newTracks: THREE.KeyframeTrack[] = [];
-  let logged = false;
+
   for (const track of raw.tracks) {
     const dot = track.name.indexOf('.');
     if (dot === -1) continue;
     const trackBone = track.name.substring(0, dot);
-    const prop      = track.name.substring(dot);
+    const prop      = track.name.substring(dot); // e.g. ".position" or ".quaternion"
 
     const humanoidName = TRACK_TO_HUMANOID[trackBone];
     if (!humanoidName) continue;
     const nodeName = humanoidToNodeName.get(humanoidName);
     if (!nodeName) continue;
 
-    if (!logged) {
-      console.log('[VRMA] Retarget sample — track:', trackBone, '→ humanoid:', humanoidName, '→ node:', nodeName);
-      logged = true;
+    // FIX: Skip hips POSITION tracks — these cause floating/crossing when
+    // the VRMA's absolute Y position conflicts with our scene grounding offset.
+    // We keep hips ROTATION (quaternion) so the animation still looks correct.
+    if (
+      humanoidName === 'hips' &&
+      (prop === '.position' || prop.includes('position'))
+    ) {
+      console.log('[VRMA] Skipping hips position track to prevent floating');
+      continue;
     }
 
     const t = track.clone();
@@ -187,7 +186,7 @@ export const BG_OPTIONS = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Idle animation
+// Idle breathing animation (applied only when no VRMA playing)
 // ─────────────────────────────────────────────────────────────
 function applyIdleAnimation(vrm: VRM, t: number) {
   const h = vrm.humanoid;
@@ -207,6 +206,7 @@ function applyIdleAnimation(vrm: VRM, t: number) {
   if (rUA) rUA.rotation.z = -1.2 + Math.sin(t * 0.6 + Math.PI) * 0.02;
   if (lLA) lLA.rotation.z = 0.3  + Math.sin(t * 0.5) * 0.02;
   if (rLA) rLA.rotation.z = -0.3 + Math.sin(t * 0.5 + Math.PI) * 0.02;
+  // Gentle hip bob — only Y position, small range
   if (hips) hips.position.y = Math.sin(t * 0.5) * 0.01;
 }
 
@@ -251,7 +251,12 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   const currentActionRef = useRef<THREE.AnimationAction | null>(null);
   const modelLoadedRef   = useRef(false);
   const blinkRef         = useRef({ lastBlink: 0, isBlinking: false, blinkStart: 0 });
-  const hipsBaseYRef     = useRef<number>(0); // Y position of hips at rest
+
+  // FIX: Store scene Y offset for grounding (feet at world Y=0).
+  // This is set once at load time and NEVER changes during animations,
+  // because we removed hips position tracks from VRMA clips.
+  const sceneGroundOffsetRef = useRef<number>(0);
+
   const currentAnimation = useStore((s) => s.currentAnimation);
 
   // ── Load VRM ─────────────────────────────────────────────────
@@ -272,6 +277,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         loaded.scene.traverse((o) => { o.frustumCulled = false; });
         loaded.scene.rotation.y = Math.PI;
 
+        // Set idle arm pose
         const h = loaded.humanoid;
         if (h) {
           const lUA = h.getNormalizedBoneNode('leftUpperArm');
@@ -284,17 +290,21 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           if (rLA) rLA.rotation.set(0, 0, -0.3);
         }
 
-        // Calculate the model's floor offset so feet land at Y=0
-        // We do this by computing the bounding box after the first frame
-        // Store the scene Y offset needed to ground the model
+        // FIX: Calculate ground offset AFTER setting idle pose.
+        // We need scene.position.y set so that box.min.y == 0 (feet on floor).
+        // Do a dummy update to get initial world matrix.
+        loaded.scene.position.set(0, 0, 0);
         loaded.scene.updateWorldMatrix(true, true);
         const box = new THREE.Box3().setFromObject(loaded.scene);
-        // box.min.y is the lowest point (feet). We push scene up by -box.min.y
-        // so feet land at world Y=0. Typically negative since model is centered.
-        hipsBaseYRef.current = -box.min.y;
-        loaded.scene.position.y = hipsBaseYRef.current;
+        // box.min.y is the lowest point of the model (feet bottom).
+        // To put feet at Y=0 we push scene up by -box.min.y.
+        const groundOffset = -box.min.y;
+        sceneGroundOffsetRef.current = groundOffset;
+        loaded.scene.position.y = groundOffset;
 
-        // Mixer on vrm.scene — normalized bone nodes live here
+        console.log(`[VRM] Ground offset: ${groundOffset.toFixed(3)} (box.min.y was ${box.min.y.toFixed(3)})`);
+
+        // Mixer runs on vrm.scene — normalized bone nodes live here
         mixerRef.current = new THREE.AnimationMixer(loaded.scene);
         modelLoadedRef.current = true;
         setVrm(loaded);
@@ -344,6 +354,8 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         mixer.stopAllAction();
         currentActionRef.current = null;
         resetToIdlePose(vrm);
+        // Restore ground offset after animation ends
+        vrm.scene.position.y = sceneGroundOffsetRef.current;
       };
       mixer.addEventListener('finished', onFinished);
 
@@ -354,6 +366,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           mixer.stopAllAction();
           currentActionRef.current = null;
           resetToIdlePose(vrm);
+          vrm.scene.position.y = sceneGroundOffsetRef.current;
         }
       }, clip.duration * 1000 + 1500);
     })();
@@ -363,15 +376,23 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   // ── Frame loop ───────────────────────────────────────────────
   useFrame((state, delta) => {
     if (!vrm) return;
+
+    // Update the mixer (drives VRMA bone rotations)
     mixerRef.current?.update(delta);
 
+    // FIX: Always keep scene grounded at the same Y offset.
+    // Since we removed hips position tracks from VRMA clips, the mixer
+    // no longer fights with our grounding — animations stay on the floor.
+    vrm.scene.position.y = sceneGroundOffsetRef.current;
+
+    // Update VRM internals (springs, expressions, etc.)
     vrm.update(delta);
 
-    // Keep model grounded: restore scene Y offset so feet stay at floor
-    vrm.scene.position.y = hipsBaseYRef.current;
+    // Apply idle breathing only when NO animation is playing
     if (!currentActionRef.current) {
       applyIdleAnimation(vrm, state.clock.elapsedTime);
     }
+
     // Blinking
     const b = blinkRef.current;
     const t = state.clock.elapsedTime;
