@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useStore } from '@/store/useStore';
 
 // ─────────────────────────────────────────────────────────────
-// VRMA animation file map
+// Animation file map
 // ─────────────────────────────────────────────────────────────
 const VRMA_ANIMATIONS: Record<string, string[]> = {
   crazy:     ['/motions/crazy.vrma'],
@@ -38,42 +38,188 @@ function pickRandom<T>(arr: T[]): T {
 }
 
 // ─────────────────────────────────────────────────────────────
-// VRMA Loader
+// THE ROOT PROBLEM (and fix):
 //
-// VRMA tracks use the ACTUAL node names from the VRM file
-// (e.g. "J_Bip_C_Hips", "J_Bip_L_UpperArm").
-// The AnimationMixer.clipAction() searches for nodes by name
-// inside the root object passed to new AnimationMixer(root).
+// VRMUtils.removeUnnecessaryJoints() strips real bone nodes from vrm.scene.
+// After that, the VRM humanoid creates "normalized" proxy bones that live
+// in a separate sub-tree. AnimationMixer targets nodes by NAME inside the
+// root object you pass to it.
 //
-// Since vrm.scene contains all those nodes, the mixer WILL find
-// them automatically — no remapping needed at all!
+// The VRMA files use different naming conventions:
+//   - Some use "J_Bip_C_Hips" style  (raw VRM bone names)
+//   - Some use "LeftUpperArm" style   (VRM humanoid normalized names)
 //
-// The only issue previously was "skipped 71 tracks" which means
-// only 20 tracks matched. That's because we were previously trying
-// to remap from humanoid names → node names, but the tracks already
-// HAD the real node names. Fix: use clips directly, zero remapping.
+// SOLUTION: Build a synthetic "proxy scene" that contains one Object3D per
+// humanoid bone, named with ALL possible aliases for that bone. Then create
+// the AnimationMixer on that proxy scene. This way the mixer finds every bone
+// regardless of which naming convention the VRMA uses.
 // ─────────────────────────────────────────────────────────────
 
-const clipCache = new Map<string, THREE.AnimationClip>();
+// VRM humanoid bone name → all possible track name aliases used by VRMA files
+const BONE_ALIASES: Record<string, string[]> = {
+  hips:              ['hips', 'Hips', 'J_Bip_C_Hips'],
+  spine:             ['spine', 'Spine', 'J_Bip_C_Spine'],
+  chest:             ['chest', 'Chest', 'Spine1', 'J_Bip_C_Chest'],
+  upperChest:        ['upperChest', 'UpperChest', 'Spine2', 'J_Bip_C_UpperChest'],
+  neck:              ['neck', 'Neck', 'J_Bip_C_Neck'],
+  head:              ['head', 'Head', 'J_Bip_C_Head'],
+  leftShoulder:      ['leftShoulder', 'LeftShoulder', 'J_Bip_L_Shoulder'],
+  leftUpperArm:      ['leftUpperArm', 'LeftUpperArm', 'LeftArm', 'J_Bip_L_UpperArm'],
+  leftLowerArm:      ['leftLowerArm', 'LeftLowerArm', 'LeftForeArm', 'J_Bip_L_LowerArm'],
+  leftHand:          ['leftHand', 'LeftHand', 'J_Bip_L_Hand'],
+  rightShoulder:     ['rightShoulder', 'RightShoulder', 'J_Bip_R_Shoulder'],
+  rightUpperArm:     ['rightUpperArm', 'RightUpperArm', 'RightArm', 'J_Bip_R_UpperArm'],
+  rightLowerArm:     ['rightLowerArm', 'RightLowerArm', 'RightForeArm', 'J_Bip_R_LowerArm'],
+  rightHand:         ['rightHand', 'RightHand', 'J_Bip_R_Hand'],
+  leftUpperLeg:      ['leftUpperLeg', 'LeftUpperLeg', 'LeftUpLeg', 'J_Bip_L_UpperLeg'],
+  leftLowerLeg:      ['leftLowerLeg', 'LeftLowerLeg', 'LeftLeg', 'J_Bip_L_LowerLeg'],
+  leftFoot:          ['leftFoot', 'LeftFoot', 'J_Bip_L_Foot'],
+  leftToes:          ['leftToes', 'LeftToes', 'LeftToeBase', 'J_Bip_L_ToeBase'],
+  rightUpperLeg:     ['rightUpperLeg', 'RightUpperLeg', 'RightUpLeg', 'J_Bip_R_UpperLeg'],
+  rightLowerLeg:     ['rightLowerLeg', 'RightLowerLeg', 'RightLeg', 'J_Bip_R_LowerLeg'],
+  rightFoot:         ['rightFoot', 'RightFoot', 'J_Bip_R_Foot'],
+  rightToes:         ['rightToes', 'RightToes', 'RightToeBase', 'J_Bip_R_ToeBase'],
+  // Fingers left
+  leftThumbProximal:      ['leftThumbProximal', 'LeftThumbProximal', 'LeftHandThumb1', 'J_Bip_L_Thumb1'],
+  leftThumbIntermediate:  ['leftThumbIntermediate', 'LeftThumbIntermediate', 'LeftHandThumb2', 'J_Bip_L_Thumb2'],
+  leftThumbDistal:        ['leftThumbDistal', 'LeftThumbDistal', 'LeftHandThumb3', 'J_Bip_L_Thumb3'],
+  leftIndexProximal:      ['leftIndexProximal', 'LeftIndexProximal', 'LeftHandIndex1', 'J_Bip_L_Index1'],
+  leftIndexIntermediate:  ['leftIndexIntermediate', 'LeftIndexIntermediate', 'LeftHandIndex2', 'J_Bip_L_Index2'],
+  leftIndexDistal:        ['leftIndexDistal', 'LeftIndexDistal', 'LeftHandIndex3', 'J_Bip_L_Index3'],
+  leftMiddleProximal:     ['leftMiddleProximal', 'LeftMiddleProximal', 'LeftHandMiddle1', 'J_Bip_L_Middle1'],
+  leftMiddleIntermediate: ['leftMiddleIntermediate', 'LeftMiddleIntermediate', 'LeftHandMiddle2', 'J_Bip_L_Middle2'],
+  leftMiddleDistal:       ['leftMiddleDistal', 'LeftMiddleDistal', 'LeftHandMiddle3', 'J_Bip_L_Middle3'],
+  leftRingProximal:       ['leftRingProximal', 'LeftRingProximal', 'LeftHandRing1', 'J_Bip_L_Ring1'],
+  leftRingIntermediate:   ['leftRingIntermediate', 'LeftRingIntermediate', 'LeftHandRing2', 'J_Bip_L_Ring2'],
+  leftRingDistal:         ['leftRingDistal', 'LeftRingDistal', 'LeftHandRing3', 'J_Bip_L_Ring3'],
+  leftLittleProximal:     ['leftLittleProximal', 'LeftLittleProximal', 'LeftHandPinky1', 'J_Bip_L_Little1'],
+  leftLittleIntermediate: ['leftLittleIntermediate', 'LeftLittleIntermediate', 'LeftHandPinky2', 'J_Bip_L_Little2'],
+  leftLittleDistal:       ['leftLittleDistal', 'LeftLittleDistal', 'LeftHandPinky3', 'J_Bip_L_Little3'],
+  // Fingers right
+  rightThumbProximal:      ['rightThumbProximal', 'RightThumbProximal', 'RightHandThumb1', 'J_Bip_R_Thumb1'],
+  rightThumbIntermediate:  ['rightThumbIntermediate', 'RightThumbIntermediate', 'RightHandThumb2', 'J_Bip_R_Thumb2'],
+  rightThumbDistal:        ['rightThumbDistal', 'RightThumbDistal', 'RightHandThumb3', 'J_Bip_R_Thumb3'],
+  rightIndexProximal:      ['rightIndexProximal', 'RightIndexProximal', 'RightHandIndex1', 'J_Bip_R_Index1'],
+  rightIndexIntermediate:  ['rightIndexIntermediate', 'RightIndexIntermediate', 'RightHandIndex2', 'J_Bip_R_Index2'],
+  rightIndexDistal:        ['rightIndexDistal', 'RightIndexDistal', 'RightHandIndex3', 'J_Bip_R_Index3'],
+  rightMiddleProximal:     ['rightMiddleProximal', 'RightMiddleProximal', 'RightHandMiddle1', 'J_Bip_R_Middle1'],
+  rightMiddleIntermediate: ['rightMiddleIntermediate', 'RightMiddleIntermediate', 'RightHandMiddle2', 'J_Bip_R_Middle2'],
+  rightMiddleDistal:       ['rightMiddleDistal', 'RightMiddleDistal', 'RightHandMiddle3', 'J_Bip_R_Middle3'],
+  rightRingProximal:       ['rightRingProximal', 'RightRingProximal', 'RightHandRing1', 'J_Bip_R_Ring1'],
+  rightRingIntermediate:   ['rightRingIntermediate', 'RightRingIntermediate', 'RightHandRing2', 'J_Bip_R_Ring2'],
+  rightRingDistal:         ['rightRingDistal', 'RightRingDistal', 'RightHandRing3', 'J_Bip_R_Ring3'],
+  rightLittleProximal:     ['rightLittleProximal', 'RightLittleProximal', 'RightHandPinky1', 'J_Bip_R_Little1'],
+  rightLittleIntermediate: ['rightLittleIntermediate', 'RightLittleIntermediate', 'RightHandPinky2', 'J_Bip_R_Little2'],
+  rightLittleDistal:       ['rightLittleDistal', 'RightLittleDistal', 'RightHandPinky3', 'J_Bip_R_Little3'],
+};
 
-function loadVRMAClip(url: string): Promise<THREE.AnimationClip | null> {
+/**
+ * Build a proxy scene containing one Object3D per bone alias.
+ * Each Object3D is linked to the real VRM normalized bone node so
+ * that position/quaternion changes on the proxy propagate to the real bone.
+ *
+ * The mixer targets this proxy scene, which has every possible alias name.
+ */
+function buildProxyScene(vrm: VRM): { proxyRoot: THREE.Object3D; aliasMap: Map<string, THREE.Object3D> } {
+  const proxyRoot = new THREE.Object3D();
+  proxyRoot.name  = '__vrma_proxy_root__';
+  const aliasMap  = new Map<string, THREE.Object3D>();
+
+  const h = vrm.humanoid;
+  if (!h) return { proxyRoot, aliasMap };
+
+  for (const [boneName, aliases] of Object.entries(BONE_ALIASES)) {
+    const realNode = h.getNormalizedBoneNode(boneName as any);
+    if (!realNode) continue;
+
+    // First alias gets a proxy that directly wraps the real node's transform
+    for (const alias of aliases) {
+      if (aliasMap.has(alias)) continue;
+
+      const proxy = new THREE.Object3D();
+      proxy.name  = alias;
+
+      // Sync proxy → real node every frame via onBeforeRender won't work here.
+      // Instead we create a proper forwarding relationship:
+      // The mixer will write to proxy.quaternion/position/scale,
+      // and we manually copy those values to realNode in the frame loop.
+      aliasMap.set(alias, proxy);
+      proxyRoot.add(proxy);
+    }
+  }
+
+  return { proxyRoot, aliasMap };
+}
+
+/**
+ * Copy proxy transforms → real VRM normalized bone nodes.
+ * Called every frame after mixer.update().
+ */
+function syncProxyToVRM(vrm: VRM, aliasMap: Map<string, THREE.Object3D>) {
+  const h = vrm.humanoid;
+  if (!h) return;
+
+  for (const [boneName] of Object.entries(BONE_ALIASES)) {
+    const realNode = h.getNormalizedBoneNode(boneName as any);
+    if (!realNode) continue;
+
+    // Use the first alias proxy as the canonical source
+    const primaryAlias = BONE_ALIASES[boneName][0];
+    const proxy = aliasMap.get(primaryAlias);
+    if (!proxy) continue;
+
+    realNode.quaternion.copy(proxy.quaternion);
+    realNode.position.copy(proxy.position);
+  }
+}
+
+// Raw clip cache (no retargeting needed, proxy handles it)
+const rawClipCache = new Map<string, THREE.AnimationClip>();
+
+/**
+ * Load VRMA and rewrite track names to match the proxy scene aliases.
+ * We build a per-VRM retargeted clip.
+ */
+function loadAndRetargetClip(
+  url: string,
+  aliasMap: Map<string, THREE.Object3D>
+): Promise<THREE.AnimationClip | null> {
   return new Promise((resolve) => {
-    if (clipCache.has(url)) { resolve(clipCache.get(url)!); return; }
     const loader = new GLTFLoader();
     loader.load(
       url,
       (gltf) => {
-        if (!gltf.animations?.length) {
-          console.warn('[VRMA] No animations in', url);
+        if (!gltf.animations?.length) { resolve(null); return; }
+        const raw = gltf.animations[0];
+
+        // Remap: keep only tracks whose bone name exists in aliasMap
+        // (i.e. we know how to handle them), and normalize the track name
+        // to the alias that's actually in the proxy scene.
+        const newTracks: THREE.KeyframeTrack[] = [];
+        for (const track of raw.tracks) {
+          const dot      = track.name.indexOf('.');
+          if (dot === -1) continue;
+          const boneName = track.name.substring(0, dot);
+          const prop     = track.name.substring(dot);
+          // Check if this alias is in our proxy
+          if (aliasMap.has(boneName)) {
+            const t = track.clone();
+            t.name  = boneName + prop; // keep as-is, proxy has this exact name
+            newTracks.push(t);
+          }
+        }
+
+        if (newTracks.length === 0) {
+          console.warn('[VRMA] No usable tracks in', url);
           resolve(null);
           return;
         }
-        const clip = gltf.animations[0];
-        clipCache.set(url, clip);
+
+        const clip = new THREE.AnimationClip(raw.name, raw.duration, newTracks);
         resolve(clip);
       },
       undefined,
-      (err) => { console.warn('[VRMA] Load error', url, err); resolve(null); }
+      (err) => { console.warn('[VRMA] Error loading', url, err); resolve(null); }
     );
   });
 }
@@ -92,7 +238,7 @@ export const BG_OPTIONS = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// Idle animation (bone-based, no VRMA)
+// Idle bone animation
 // ─────────────────────────────────────────────────────────────
 function applyIdleAnimation(vrm: VRM, t: number) {
   const h = vrm.humanoid;
@@ -115,21 +261,17 @@ function applyIdleAnimation(vrm: VRM, t: number) {
   if (hips) hips.position.y = Math.sin(t * 0.5) * 0.01;
 }
 
-function resetToIdlePose(vrm: VRM) {
+function resetToIdlePose(vrm: VRM, aliasMap: Map<string, THREE.Object3D>) {
   const h = vrm.humanoid;
   if (!h) return;
-  const allBones = [
-    'hips','spine','chest','upperChest','neck','head',
-    'leftShoulder','leftUpperArm','leftLowerArm','leftHand',
-    'rightShoulder','rightUpperArm','rightLowerArm','rightHand',
-    'leftUpperLeg','leftLowerLeg','leftFoot','leftToes',
-    'rightUpperLeg','rightLowerLeg','rightFoot','rightToes',
-  ];
+  const allBones = Object.keys(BONE_ALIASES);
   allBones.forEach((n) => {
     const b = h.getNormalizedBoneNode(n as any);
     if (b) { b.rotation.set(0, 0, 0); b.position.set(0, 0, 0); }
+    // Also reset proxy
+    const proxy = aliasMap.get(BONE_ALIASES[n][0]);
+    if (proxy) { proxy.rotation.set(0, 0, 0); proxy.position.set(0, 0, 0); }
   });
-  // Restore idle arm pose
   const lUA = h.getNormalizedBoneNode('leftUpperArm');
   const rUA = h.getNormalizedBoneNode('rightUpperArm');
   const lLA = h.getNormalizedBoneNode('leftLowerArm');
@@ -154,6 +296,8 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   const [isLoading, setIsLoading] = useState(false);
 
   const mixerRef         = useRef<THREE.AnimationMixer | null>(null);
+  const proxyRootRef     = useRef<THREE.Object3D | null>(null);
+  const aliasMapRef      = useRef<Map<string, THREE.Object3D>>(new Map());
   const currentActionRef = useRef<THREE.AnimationAction | null>(null);
   const modelLoadedRef   = useRef(false);
   const blinkRef         = useRef({ lastBlink: 0, isBlinking: false, blinkStart: 0 });
@@ -173,10 +317,11 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
         const loaded = gltf.userData.vrm as VRM;
         if (!loaded) { setLoadError('Invalid VRM file'); setIsLoading(false); return; }
 
-        VRMUtils.removeUnnecessaryJoints(gltf.scene);
+        // NOTE: Do NOT call removeUnnecessaryJoints — it destroys bones we need
         loaded.scene.traverse((o) => { o.frustumCulled = false; });
         loaded.scene.rotation.y = Math.PI;
 
+        // Set idle arm pose
         const h = loaded.humanoid;
         if (h) {
           const lUA = h.getNormalizedBoneNode('leftUpperArm');
@@ -189,8 +334,14 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
           if (rLA) rLA.rotation.set(0, 0, -0.3);
         }
 
-        // Create mixer on vrm.scene — all J_Bip nodes live here
-        mixerRef.current       = new THREE.AnimationMixer(loaded.scene);
+        // Build proxy scene with all bone aliases
+        const { proxyRoot, aliasMap } = buildProxyScene(loaded);
+        proxyRootRef.current  = proxyRoot;
+        aliasMapRef.current   = aliasMap;
+
+        // Mixer targets the PROXY scene, not vrm.scene
+        mixerRef.current = new THREE.AnimationMixer(proxyRoot);
+
         modelLoadedRef.current = true;
         setVrm(loaded);
         setIsLoading(false);
@@ -206,7 +357,7 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     return () => { mixerRef.current?.stopAllAction(); };
   }, [modelPath]);
 
-  // ── Play VRMA animation ──────────────────────────────────────
+  // ── Play animation ───────────────────────────────────────────
   useEffect(() => {
     if (!vrm || !mixerRef.current || !currentAnimation) return;
 
@@ -219,31 +370,29 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
     (async () => {
       if (!mixerRef.current) return;
 
-      // Fade out current
       if (currentActionRef.current) {
         currentActionRef.current.fadeOut(0.3);
         currentActionRef.current = null;
       }
 
-      const clip = await loadVRMAClip(file);
+      const clip = await loadAndRetargetClip(file, aliasMapRef.current);
       if (!clip || !mixerRef.current) return;
 
       const action = mixerRef.current.clipAction(clip);
       action.reset();
       action.setLoop(THREE.LoopOnce, 1);
-      action.clampWhenFinished = false; // don't freeze on last frame
+      action.clampWhenFinished = false;
       action.fadeIn(0.3).play();
       currentActionRef.current = action;
 
-      // Use clip's actual duration so animation plays fully
       const dur = clip.duration * 1000;
       setTimeout(() => {
         if (currentActionRef.current === action) {
           action.fadeOut(0.5);
           currentActionRef.current = null;
         }
-        resetToIdlePose(vrm);
-      }, dur + 200); // small buffer after clip ends
+        resetToIdlePose(vrm, aliasMapRef.current);
+      }, dur + 200);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAnimation]);
@@ -251,14 +400,22 @@ const VRMModel: React.FC<{ modelPath: string }> = ({ modelPath }) => {
   // ── Frame loop ───────────────────────────────────────────────
   useFrame((state, delta) => {
     if (!vrm) return;
-    mixerRef.current?.update(delta);
-    vrm.update(delta);
 
-    if (!currentActionRef.current) {
+    // 1. Update mixer (writes to proxy nodes)
+    mixerRef.current?.update(delta);
+
+    // 2. Copy proxy transforms → real VRM bones
+    if (currentActionRef.current) {
+      syncProxyToVRM(vrm, aliasMapRef.current);
+    } else {
+      // Idle animation drives real bones directly
       applyIdleAnimation(vrm, state.clock.elapsedTime);
     }
 
-    // Blinking
+    // 3. Update VRM (physics, lookAt, expressions)
+    vrm.update(delta);
+
+    // 4. Blinking
     const b = blinkRef.current;
     const t = state.clock.elapsedTime;
     if (vrm.expressionManager) {
