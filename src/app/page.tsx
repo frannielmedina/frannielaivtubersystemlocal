@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { VTuberScene } from '@/components/VTuberScene';
+import React, { useState, useEffect, useRef } from 'react';
+import { VTuberScene, BG_OPTIONS } from '@/components/VTuberScene';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { CollabMode } from '@/components/CollabMode';
 import { GamingMode } from '@/components/GamingMode';
@@ -13,7 +13,7 @@ import { useStore } from '@/store/useStore';
 import { AIService, GameContext } from '@/services/AIService';
 import { TTSService } from '@/services/TTSService';
 import { TwitchService } from '@/services/TwitchService';
-import { Settings, MessageCircle, Video, Mic, X } from 'lucide-react';
+import { Settings, MessageCircle, Video, Mic, X, Image } from 'lucide-react';
 
 interface OverlayMessage {
   id: string;
@@ -25,37 +25,38 @@ interface OverlayMessage {
 
 export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [chatOpen, setChatOpen] = useState(true);
-  
+  const [chatOpen, setChatOpen]         = useState(true);
+  const [bgPickerOpen, setBgPickerOpen] = useState(false);
+  const [selectedBg, setSelectedBg]     = useState('gradient-purple');
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [mouseIdleTimeout, setMouseIdleTimeout] = useState<NodeJS.Timeout | null>(null);
-  
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isIdleRef    = useRef(false);
+
   const [overlayMessages, setOverlayMessages] = useState<OverlayMessage[]>([]);
-  
-  // Game context state
   const [currentGameContext, setCurrentGameContext] = useState<GameContext>({ game: null });
-  
+
   const { config, addChatMessage, setAnimation, setConfig, chatMessages, gameState } = useStore();
-  
-  const [aiService] = useState(() => new AIService(config.ai));
-  const [ttsService] = useState(() => new TTSService(config.tts));
+
+  const [aiService]     = useState(() => new AIService(config.ai));
+  const [ttsService]    = useState(() => new TTSService(config.tts));
   const [twitchService] = useState(() => new TwitchService(config.twitch));
 
-  // Load saved config
+  // ── Load saved config & bg ──────────────────────────────
   useEffect(() => {
-    const savedConfig = localStorage.getItem('vtuber-config');
-    if (savedConfig) {
-      try {
-        const parsed = JSON.parse(savedConfig);
-        setConfig(parsed);
-        console.log('✅ Configuration loaded:', parsed);
-      } catch (error) {
-        console.error('❌ Error loading saved config:', error);
-      }
+    const saved = localStorage.getItem('vtuber-config');
+    if (saved) {
+      try { setConfig(JSON.parse(saved)); } catch {}
     }
-  }, [setConfig]);
+    const savedBg = localStorage.getItem('vtuber-bg');
+    if (savedBg) setSelectedBg(savedBg);
+  }, []);
 
-  // Update game context when game state changes
+  // Save bg choice
+  useEffect(() => {
+    localStorage.setItem('vtuber-bg', selectedBg);
+  }, [selectedBg]);
+
+  // ── Game context sync ───────────────────────────────────
   useEffect(() => {
     setCurrentGameContext({
       game: gameState.currentGame,
@@ -64,341 +65,235 @@ export default function Home() {
     });
   }, [gameState]);
 
-  // Handle overlay messages
+  // ── Overlay messages ────────────────────────────────────
   useEffect(() => {
-    const lastMessage = chatMessages[chatMessages.length - 1];
-    if (!lastMessage) return;
-
-    setOverlayMessages([]);
-
-    const overlayMsg: OverlayMessage = {
-      id: lastMessage.id,
-      username: lastMessage.username,
-      message: lastMessage.message,
-      timestamp: lastMessage.timestamp,
-      color: lastMessage.color,
-    };
-
-    setOverlayMessages([overlayMsg]);
-
-    const timeout = setTimeout(() => {
-      setOverlayMessages([]);
-    }, 60000);
-
-    return () => clearTimeout(timeout);
+    const last = chatMessages[chatMessages.length - 1];
+    if (!last) return;
+    setOverlayMessages([{ id: last.id, username: last.username, message: last.message, timestamp: last.timestamp, color: last.color }]);
+    const t = setTimeout(() => setOverlayMessages([]), 60000);
+    return () => clearTimeout(t);
   }, [chatMessages]);
 
-  // Auto-hide controls
+  // ── Auto-hide controls (FIXED: no rapid flicker) ────────
   useEffect(() => {
-    const handleMouseMove = () => {
-      setControlsVisible(true);
-      
-      if (mouseIdleTimeout) {
-        clearTimeout(mouseIdleTimeout);
+    const show = () => {
+      if (isIdleRef.current) {
+        isIdleRef.current = false;
+        setControlsVisible(true);
       }
-      
-      const timeout = setTimeout(() => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = setTimeout(() => {
+        isIdleRef.current = true;
         setControlsVisible(false);
-      }, 60000);
-      
-      setMouseIdleTimeout(timeout);
+      }, 5000); // hide after 5s of no movement
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    handleMouseMove();
-    
+    window.addEventListener('mousemove', show);
+    show();
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      if (mouseIdleTimeout) {
-        clearTimeout(mouseIdleTimeout);
-      }
+      window.removeEventListener('mousemove', show);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
-  }, [mouseIdleTimeout]);
+  }, []);
 
-  // Update services when config changes
+  // ── Services update ─────────────────────────────────────
   useEffect(() => {
-    console.log('🔄 Updating services with config:', config.ai);
     aiService.updateConfig(config.ai);
     ttsService.updateConfig(config.tts);
-    
-    const shouldConnect = config.twitch.enabled && 
-                         config.twitch.channel && 
-                         config.twitch.channel.trim() !== '';
-    
-    if (shouldConnect) {
+
+    if (config.twitch.enabled && config.twitch.channel?.trim()) {
       twitchService.updateConfig(config.twitch);
-      
       if (!twitchService.isConnected()) {
-        console.log('🔌 Connecting to Twitch with channel:', config.twitch.channel);
-        twitchService.connect(handleTwitchMessage).catch(err => {
-          console.error('❌ Error connecting to Twitch:', err);
-          addChatMessage({
-            id: Date.now().toString(),
-            username: 'System',
-            message: `Failed to connect to Twitch: ${err.message}. Check your channel name in settings.`,
-            timestamp: Date.now(),
-            color: '#ef4444',
-          });
+        twitchService.connect(handleTwitchMessage).catch((err) => {
+          addChatMessage({ id: Date.now().toString(), username: 'System', message: `Twitch error: ${err.message}`, timestamp: Date.now(), color: '#ef4444' });
         });
       }
-    } else {
-      if (twitchService.isConnected()) {
-        console.log('🔌 Disconnecting from Twitch...');
-        twitchService.disconnect();
-      }
+    } else if (twitchService.isConnected()) {
+      twitchService.disconnect();
     }
-
-    return () => {
-      if (twitchService.isConnected()) {
-        twitchService.disconnect();
-      }
-    };
+    return () => { if (twitchService.isConnected()) twitchService.disconnect(); };
   }, [config.ai, config.tts, config.twitch.enabled, config.twitch.channel, config.twitch.token]);
 
   const handleTwitchMessage = async (message: any) => {
-    console.log('💬 Twitch message received:', message);
-    
-    addChatMessage({
-      id: Date.now().toString(),
-      username: message.username,
-      message: message.message,
-      timestamp: message.timestamp,
-      color: message.color,
-    });
-
-    // Don't respond to game commands with AI - they're handled by the game boards
-    const isGameCommand = /^!(move|place)\s+/i.test(message.message);
-    if (!isGameCommand) {
+    addChatMessage({ id: Date.now().toString(), username: message.username, message: message.message, timestamp: message.timestamp, color: message.color });
+    if (!/^!(move|place)\s+/i.test(message.message)) {
       await processAIResponse(message.username, message.message);
     }
   };
 
   const handleDirectMessage = async (messageText: string) => {
-    console.log('💬 Direct message received:', messageText);
-    
-    addChatMessage({
-      id: Date.now().toString(),
-      username: 'You',
-      message: messageText,
-      timestamp: Date.now(),
-      color: '#60a5fa',
-    });
-
+    addChatMessage({ id: Date.now().toString(), username: 'You', message: messageText, timestamp: Date.now(), color: '#60a5fa' });
     await processAIResponse('You', messageText);
   };
 
-  // IMPROVED: Process AI response WITH game context
   const processAIResponse = async (username: string, message: string) => {
-    console.log('🤖 Processing AI response with game context...');
-    console.log('📝 API Key present:', !!config.ai.apiKey);
-    console.log('🔧 Provider:', config.ai.provider);
-    console.log('🎯 Model:', config.ai.model);
-    console.log('🎮 Game Context:', currentGameContext);
-
     if (!config.ai.apiKey) {
-      console.error('❌ No API key configured');
-      addChatMessage({
-        id: (Date.now() + 1).toString(),
-        username: config.vtuber.name || 'VTuber',
-        message: '❌ Error: API key not configured. Please add your API key in Settings.',
-        timestamp: Date.now(),
-        isAI: true,
-        color: '#ef4444',
-      });
+      addChatMessage({ id: (Date.now() + 1).toString(), username: config.vtuber.name || 'VTuber', message: '❌ No API key configured. Add your key in Settings.', timestamp: Date.now(), isAI: true, color: '#ef4444' });
       return;
     }
-
     try {
       const messages = [
         { role: 'system' as const, content: config.ai.systemPrompt },
-        { role: 'user' as const, content: `${username} says: ${message}` },
+        { role: 'user'   as const, content: `${username} says: ${message}` },
       ];
-
-      console.log('📤 Sending to API with game context');
-      
-      // PASS GAME CONTEXT TO AI
       const response = await aiService.generateResponse(messages, currentGameContext);
-      
-      console.log('✅ Response received:', response);
+      addChatMessage({ id: (Date.now() + 1).toString(), username: config.vtuber.name || 'VTuber', message: response, timestamp: Date.now(), isAI: true, color: '#9333ea' });
+      if (config.tts.enabled) await ttsService.speak(response);
 
-      addChatMessage({
-        id: (Date.now() + 1).toString(),
-        username: config.vtuber.name || 'VTuber',
-        message: response,
-        timestamp: Date.now(),
-        isAI: true,
-        color: '#9333ea',
-      });
-
-      if (config.tts.enabled) {
-        console.log('🔊 Speaking response...');
-        await ttsService.speak(response);
+      // Detect animation trigger from response
+      const trigger = detectAnimationTrigger(response);
+      if (trigger) {
+        setAnimation({ type: 'emote', name: trigger, duration: 4000 });
       }
-
-      const emotes = ['wave', 'celebrate', 'think', 'heart'];
-      const randomEmote = emotes[Math.floor(Math.random() * emotes.length)];
-      setAnimation({
-        type: 'emote',
-        name: randomEmote,
-        duration: 2000,
-      });
-
     } catch (error) {
-      console.error('❌ Error processing AI response:', error);
-      
-      let errorMessage = 'Error generating response. ';
-      if (error instanceof Error) {
-        errorMessage += error.message;
-      }
-      
-      addChatMessage({
-        id: (Date.now() + 2).toString(),
-        username: 'System',
-        message: errorMessage,
-        timestamp: Date.now(),
-        color: '#ef4444',
-      });
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      addChatMessage({ id: (Date.now() + 2).toString(), username: 'System', message: msg, timestamp: Date.now(), color: '#ef4444' });
     }
   };
 
-  // Function to update game context (call this from game boards)
-  const updateGameContext = (context: Partial<GameContext>) => {
-    setCurrentGameContext(prev => ({ ...prev, ...context }));
-  };
+  // Detect animation from AI response text
+  function detectAnimationTrigger(text: string): string | null {
+    const t = text.toUpperCase();
+    if (t.includes('[DANCE]'))     return 'dance';
+    if (t.includes('[ENERGETIC]')) return 'energetic';
+    if (t.includes('[KAWAII]'))    return 'kawaii';
+    if (t.includes('[WAVE]'))      return 'wave';
+    if (t.includes('[CELEBRATE]')) return 'celebrate';
+    if (t.includes('[BOW]'))       return 'bow';
+    if (t.includes('[THINK]'))     return 'think';
+    if (t.includes('[THUMBSUP]'))  return 'thumbsup';
+    if (t.includes('[HEART]'))     return 'heart';
+    if (t.includes('[SAD]'))       return 'sad';
+    if (t.includes('[ANGRY]'))     return 'angry';
+    if (t.includes('[SURPRISED]')) return 'surprised';
+    if (t.includes('[SPIN]'))      return 'spin';
+    if (t.includes('[SQUAT]'))     return 'squat';
+    if (t.includes('[PEACE]'))     return 'peace';
+    if (t.includes('[SHOOT]'))     return 'shoot';
+    if (t.includes('[CRAZY]'))     return 'crazy';
+    if (t.includes('[MODELPOSE]')) return 'modelpose';
+    return null;
+  }
 
-  // Make updateGameContext available globally
+  // Expose game context updater globally
+  const updateGameContext = (context: Partial<GameContext>) => {
+    setCurrentGameContext((prev) => ({ ...prev, ...context }));
+  };
   useEffect(() => {
     (window as any).updateGameContext = updateGameContext;
-    return () => {
-      delete (window as any).updateGameContext;
-    };
+    return () => { delete (window as any).updateGameContext; };
   }, []);
 
-  if (config.appMode === 'collab') {
-    return <CollabMode />;
-  }
+  // ── Modes ────────────────────────────────────────────────
+  if (config.appMode === 'collab')  return <CollabMode />;
+  if (config.appMode === 'gaming')  return <GamingMode />;
 
-  if (config.appMode === 'gaming') {
-    return <GamingMode />;
-  }
+  const hasGame = !!gameState.currentGame;
 
   const renderGame = () => {
     switch (gameState.currentGame) {
-      case 'chess':
-        return <ChessBoard />;
-      case 'checkers':
-        return <CheckersBoard />;
-      case 'reversi':
-        return <ReversiBoard />;
-      default:
-        return (
-          <div className="flex items-center justify-center h-full text-gray-400">
-            <p className="text-xl">Select a game in settings</p>
-          </div>
-        );
+      case 'chess':    return <ChessBoard />;
+      case 'checkers': return <CheckersBoard />;
+      case 'reversi':  return <ReversiBoard />;
+      default:         return null;
     }
   };
 
+  // Grid layout: if no game, 2 cols (vtuber + chat); if game, 3 cols
+  const gridCols = hasGame
+    ? (chatOpen ? 'grid-cols-12' : 'grid-cols-9')
+    : (chatOpen ? 'grid-cols-8'  : 'grid-cols-5');
+
+  const vtuberCols  = hasGame ? 'col-span-5' : 'col-span-5';
+  const gameCols    = 'col-span-4';
+  const chatCols    = 'col-span-3';
+
   return (
     <main className="h-screen w-screen overflow-hidden bg-black relative">
-      <div className={`grid h-screen transition-all duration-300 ${
-        chatOpen ? 'grid-cols-12' : 'grid-cols-9'
-      }`}>
-        {/* VTuber Scene */}
-        <div className={`${chatOpen ? 'col-span-5' : 'col-span-5'} relative h-screen`}>
-          <VTuberScene />
-          
-          {/* Controls Overlay */}
-          <div 
-            className={`absolute top-4 right-4 flex gap-2 transition-opacity duration-500 ${
-              controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            }`}
+      <div className={`grid h-screen transition-all duration-300 ${gridCols}`}>
+
+        {/* ── VTuber Scene ─────────────────────────────────── */}
+        <div className={`${vtuberCols} relative h-screen`}>
+          <VTuberScene bgId={selectedBg} />
+
+          {/* Controls overlay — fade in/out smoothly */}
+          <div
+            className="absolute top-4 right-4 flex gap-2 transition-opacity duration-700 pointer-events-auto"
+            style={{ opacity: controlsVisible ? 1 : 0, pointerEvents: controlsVisible ? 'auto' : 'none' }}
           >
-            <button
-              onClick={() => setConfig({ appMode: 'collab' })}
-              className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors"
-              title="Collab Mode"
-            >
-              <Mic size={24} color="white" />
-            </button>
-            <button
-              onClick={() => setConfig({ appMode: 'gaming' })}
-              className="p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors"
-              title="Gaming Mode"
-            >
-              <Video size={24} color="white" />
-            </button>
-            <button
-              onClick={() => setChatOpen(!chatOpen)}
-              className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors"
-            >
-              {chatOpen ? <X size={24} color="white" /> : <MessageCircle size={24} color="white" />}
-            </button>
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors"
-            >
-              <Settings size={24} color="white" />
-            </button>
+            {/* Background picker */}
+            <div className="relative">
+              <button
+                onClick={() => setBgPickerOpen((o) => !o)}
+                className="p-3 bg-indigo-600 hover:bg-indigo-700 rounded-full transition-colors"
+                title="Change Background"
+              >
+                <Image size={22} color="white" />
+              </button>
+              {bgPickerOpen && (
+                <div className="absolute right-0 top-12 bg-gray-900 border border-gray-700 rounded-lg p-3 z-50 w-52 shadow-xl">
+                  <p className="text-xs text-gray-400 mb-2 font-semibold">Background</p>
+                  {BG_OPTIONS.map((bg) => (
+                    <button
+                      key={bg.id}
+                      onClick={() => { setSelectedBg(bg.id); setBgPickerOpen(false); }}
+                      className={`w-full text-left text-sm px-3 py-2 rounded mb-1 flex items-center gap-2 transition-colors ${
+                        selectedBg === bg.id ? 'bg-purple-700 text-white' : 'text-gray-300 hover:bg-gray-800'
+                      }`}
+                    >
+                      <span
+                        className="w-5 h-5 rounded border border-gray-600 flex-shrink-0"
+                        style={bg.style.startsWith('linear') ? { backgroundImage: bg.style } : { backgroundColor: bg.style === 'transparent' ? '#888' : bg.style }}
+                      />
+                      {bg.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => setConfig({ appMode: 'collab' })}  className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors" title="Collab Mode"><Mic size={22} color="white" /></button>
+            <button onClick={() => setConfig({ appMode: 'gaming' })}  className="p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors" title="Gaming Mode"><Video size={22} color="white" /></button>
+            <button onClick={() => setChatOpen((o) => !o)}            className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors">{chatOpen ? <X size={22} color="white" /> : <MessageCircle size={22} color="white" />}</button>
+            <button onClick={() => setSettingsOpen(true)}             className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors"><Settings size={22} color="white" /></button>
           </div>
 
-          {/* VTuber Info */}
-          <div 
-            className={`absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg p-4 transition-opacity duration-500 ${
-              controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
-            }`}
+          {/* VTuber name — minimal, no status */}
+          <div
+            className="absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg px-4 py-2 transition-opacity duration-700"
+            style={{ opacity: controlsVisible ? 1 : 0 }}
           >
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-xl font-bold text-white">
               🎮 {config.vtuber.name || 'AI VTuber'}
             </h1>
-            <p className="text-gray-300">
-              {gameState.currentGame === 'chess' && '♟️ Playing Chess'}
-              {gameState.currentGame === 'checkers' && '⚫ Playing Checkers'}
-              {gameState.currentGame === 'reversi' && '⚪ Playing Reversi'}
-              {!gameState.currentGame && '💤 Waiting'}
-            </p>
-            {config.ai.apiKey ? (
-              <p className="text-green-400 text-sm mt-1">✅ API Connected</p>
-            ) : (
-              <p className="text-red-400 text-sm mt-1">❌ No API Key</p>
+            {config.twitch.enabled && config.twitch.channel && (
+              <p className="text-blue-400 text-xs mt-0.5">💬 {config.twitch.channel}</p>
             )}
-            {config.twitch.enabled && config.twitch.channel ? (
-              <p className="text-blue-400 text-sm mt-1">
-                💬 Twitch: {config.twitch.channel}
-                {!config.twitch.token || config.twitch.token.trim() === '' ? ' (read-only)' : ''}
-              </p>
-            ) : null}
           </div>
         </div>
 
-        {/* Game Board */}
-        <div className={`${chatOpen ? 'col-span-4' : 'col-span-4'} bg-gray-900 p-4 h-screen overflow-y-auto transition-all duration-300`}>
-          {renderGame()}
-        </div>
+        {/* ── Game Board (only when a game is selected) ─────── */}
+        {hasGame && (
+          <div className={`${gameCols} bg-gray-900 p-4 h-screen overflow-y-auto`}>
+            {renderGame()}
+          </div>
+        )}
 
-        {/* Chat Panel */}
+        {/* ── Chat Panel ───────────────────────────────────── */}
         {chatOpen && (
-          <div className="col-span-3 h-screen transition-all duration-300">
+          <div className={`${hasGame ? chatCols : 'col-span-3'} h-screen`}>
             <ChatPanel onDirectMessage={handleDirectMessage} />
           </div>
         )}
       </div>
 
-      {/* Message Overlay */}
+      {/* Message overlay */}
       {overlayMessages.length > 0 && (
         <div className="fixed bottom-4 left-4 z-40 max-w-md">
           {overlayMessages.map((msg) => (
-            <div
-              key={msg.id}
-              className="bg-black bg-opacity-80 backdrop-blur-sm px-4 py-3 rounded-lg shadow-2xl animate-fade-in mb-2"
-            >
+            <div key={msg.id} className="bg-black bg-opacity-80 backdrop-blur-sm px-4 py-3 rounded-lg shadow-2xl animate-fade-in mb-2">
               <div className="flex items-center gap-2 mb-1">
-                <span 
-                  className="font-bold text-sm"
-                  style={{ color: msg.color || '#60a5fa' }}
-                >
-                  {msg.username}
-                </span>
+                <span className="font-bold text-sm" style={{ color: msg.color || '#60a5fa' }}>{msg.username}</span>
               </div>
               <p className="text-white text-sm">{msg.message}</p>
             </div>
@@ -407,12 +302,6 @@ export default function Home() {
       )}
 
       <SettingsPanel isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      
-      {!controlsVisible && (
-        <div className="fixed bottom-4 right-4 bg-black bg-opacity-60 px-4 py-2 rounded-full text-white text-xs animate-pulse">
-          💤 Move mouse to show controls
-        </div>
-      )}
     </main>
   );
 }
