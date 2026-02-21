@@ -204,10 +204,8 @@ function applyParsedClip(clip: ParsedClip, vrm: VRM, t: number) {
       node.quaternion.copy(mirrorQuatY(_q));
     }
     if (bt.posValues && bt.humanoidName === 'hips') {
-      // Keep hips at rest position (0). VRMA hips Y offsets cause floating
-      // because they include the model's T-pose height offset.
-      // The scene groundOffset already places the model at Y=0 correctly.
-      node.position.set(0, 0, 0);
+      sampleVec3(bt.times, bt.posValues, t, _v3);
+      node.position.y = Math.max(0, _v3.y);
     }
   }
 }
@@ -246,7 +244,7 @@ function applyIdleAnimation(vrm: VRM, t: number) {
   if (rUA)   rUA.rotation.z = -1.2 + Math.sin(t * 0.6 + Math.PI) * 0.02;
   if (lLA)   lLA.rotation.z = 0.3  + Math.sin(t * 0.5) * 0.02;
   if (rLA)   rLA.rotation.z = -0.3 + Math.sin(t * 0.5 + Math.PI) * 0.02;
-  // hips.position.y intentionally not set — scene.position.y handles grounding
+  if (hips)  hips.position.y = Math.sin(t * 0.5) * 0.01;
 }
 
 function resetToIdlePose(vrm: VRM) {
@@ -361,14 +359,13 @@ const VRMModel: React.FC<VRMModelProps> = ({ modelPath, onLoaded, onError }) => 
 
   useFrame((state, delta) => {
     if (!vrm) return;
+    vrm.scene.position.y = sceneGroundOffsetRef.current;
 
     if (isPlayingRef.current && currentClipRef.current) {
       const clip = currentClipRef.current;
       if (animStartRef.current < 0) animStartRef.current = state.clock.elapsedTime;
       const elapsed = state.clock.elapsedTime - animStartRef.current;
       if (elapsed <= clip.duration) {
-        // During VRMA: ground the scene, let hips bone handle Y motion
-        vrm.scene.position.y = sceneGroundOffsetRef.current;
         applyParsedClip(clip, vrm, elapsed);
       } else {
         isPlayingRef.current   = false;
@@ -376,8 +373,6 @@ const VRMModel: React.FC<VRMModelProps> = ({ modelPath, onLoaded, onError }) => 
         resetToIdlePose(vrm);
       }
     } else {
-      // During idle: pin scene to ground
-      vrm.scene.position.y = sceneGroundOffsetRef.current;
       applyIdleAnimation(vrm, state.clock.elapsedTime);
     }
 
@@ -434,8 +429,8 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
     const dx = (e.clientX - dragStart.x) * 0.003;
-    // Only move horizontally (X). Y is ground-controlled by sceneGroundOffset.
-    setVTuberPosition([vtuberPosition[0] + dx, 0, vtuberPosition[2]]);
+    const dy = -(e.clientY - dragStart.y) * 0.003;
+    setVTuberPosition([vtuberPosition[0] + dx, vtuberPosition[1] + dy, vtuberPosition[2]]);
     setDragStart({ x: e.clientX, y: e.clientY });
   };
   const handleWheel = (e: React.WheelEvent) => {
@@ -480,8 +475,7 @@ export const VTuberScene: React.FC<{ bgId?: string }> = ({ bgId = 'gradient-purp
         <pointLight       position={[0,  2, 2]} intensity={0.5} />
         <Suspense fallback={null}>
           {/* PI rotation on the GROUP, not on vrm.scene → animations unaffected */}
-          {/* Y position comes from sceneGroundOffset inside VRM scene — we only apply X/Z from store */}
-          <group position={[vtuberPosition[0], 0, vtuberPosition[2]]} rotation={modelRotation} scale={config.vtuber.scale}>
+          <group position={vtuberPosition} rotation={modelRotation} scale={config.vtuber.scale}>
             <VRMModel
               modelPath={config.vtuber.modelPath}
               onLoaded={() => setIsLoading(false)}
