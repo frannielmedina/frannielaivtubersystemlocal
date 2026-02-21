@@ -381,8 +381,6 @@ const VRMModel: React.FC<VRMModelProps> = ({ modelPath, onLoaded, onError }) => 
     }
   });
 
-  if (isLoading) return null; // loading indicator shown outside rotated group
-  if (loadError) return null;
   if (!vrm) return null;
   return <primitive object={vrm.scene} />;
 };
