@@ -1,441 +1,456 @@
 'use client';
 
 /**
- * /settings - Página de configuración completa
- * Coloca en: src/app/settings/page.tsx
+ * /chat - Página de chat independiente
+ * Coloca en: src/app/chat/page.tsx
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
-interface VtuberConfig {
-  vtuber: { name: string; prompt: string; language: string; voiceEnabled: boolean };
-  tts: {
-    provider: 'browser' | 'elevenlabs' | 'voicevox' | 'none';
-    elevenlabs: { apiKey: string; voiceId: string };
-    voicevox: { endpoint: string; speaker: number };
-    browserVoice: string; browserRate: number; browserPitch: number;
-  };
-  ai: {
-    provider: 'openai' | 'anthropic' | 'openrouter' | 'ollama';
-    apiKey: string; model: string; temperature: number; maxTokens: number;
-    openrouterModel: string; ollamaEndpoint: string; ollamaModel: string;
-  };
-  game: { current: 'chess' | 'checkers' | 'reversi' | 'none'; difficulty: 'easy' | 'medium' | 'hard'; commentOnMoves: boolean; commentFrequency: number };
-  twitch: { enabled: boolean; channel: string; oauth: string; botName: string; respondToAll: boolean; respondToMentions: boolean; ignoredUsers: string; cooldownSeconds: number };
-  obs: { overlayUrl: string; showChat: boolean; chatLimit: number; transparentBg: boolean };
+interface ChatMessage {
+  id: string;
+  username: string;
+  message: string;
+  timestamp: number;
+  isAI?: boolean;
+  color?: string;
 }
 
-const DEFAULT: VtuberConfig = {
-  vtuber: { name: 'Miko', language: 'es', voiceEnabled: true, prompt: `Eres Miko, una VTuber amigable y divertida. Juegas con tu chat de Twitch. Eres entusiasta, un poco torpe, y siempre positiva. Tus respuestas son cortas (1-2 oraciones) y naturales.` },
-  tts: { provider: 'browser', elevenlabs: { apiKey: '', voiceId: '' }, voicevox: { endpoint: 'http://localhost:50021', speaker: 1 }, browserVoice: '', browserRate: 1.0, browserPitch: 1.1 },
-  ai: { provider: 'openai', apiKey: '', model: 'gpt-4o-mini', temperature: 0.85, maxTokens: 150, openrouterModel: 'openai/gpt-4o-mini', ollamaEndpoint: 'http://localhost:11434', ollamaModel: 'llama3' },
-  game: { current: 'chess', difficulty: 'medium', commentOnMoves: true, commentFrequency: 3 },
-  twitch: { enabled: false, channel: '', oauth: '', botName: '', respondToAll: true, respondToMentions: true, ignoredUsers: 'nightbot,streamelements,moobot', cooldownSeconds: 5 },
-  obs: { overlayUrl: '', showChat: true, chatLimit: 5, transparentBg: true },
-};
-
-function merge(saved: Partial<VtuberConfig>): VtuberConfig {
-  return {
-    vtuber: { ...DEFAULT.vtuber, ...saved.vtuber },
-    tts: { ...DEFAULT.tts, ...saved.tts, elevenlabs: { ...DEFAULT.tts.elevenlabs, ...saved.tts?.elevenlabs }, voicevox: { ...DEFAULT.tts.voicevox, ...saved.tts?.voicevox } },
-    ai: { ...DEFAULT.ai, ...saved.ai },
-    game: { ...DEFAULT.game, ...saved.game },
-    twitch: { ...DEFAULT.twitch, ...saved.twitch },
-    obs: { ...DEFAULT.obs, ...saved.obs },
-  };
+interface Config {
+  vtuber?: { name?: string };
+  twitch?: { enabled?: boolean; channel?: string };
 }
 
-const T = {
-  bg: '#080810', sf: 'rgba(255,255,255,0.03)', sf2: 'rgba(255,255,255,0.055)',
-  bd: 'rgba(255,255,255,0.07)', ac: '#7c3aed', acl: 'rgba(124,58,237,0.18)',
-  tx: '#e2e8f0', mu: '#6b7280',
-  font: "'DM Mono','Fira Code',monospace", head: "'Syne',sans-serif",
-};
-
-const iStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 13px', borderRadius: 8,
-  background: T.sf2, border: `1px solid ${T.bd}`,
-  color: T.tx, fontSize: 12, fontFamily: T.font, outline: 'none',
-};
-
-function TI({ val, set, ph, type='text' }: { val: string; set: (v:string)=>void; ph?: string; type?: string }) {
-  return <input type={type} value={val} placeholder={ph} onChange={e=>set(e.target.value)} style={iStyle}
-    onFocus={e=>(e.target.style.borderColor='rgba(124,58,237,0.6)')}
-    onBlur={e=>(e.target.style.borderColor=T.bd)} />;
+function timeAgo(ts: number): string {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  return `${Math.floor(s / 3600)}h`;
 }
 
-function TA({ val, set, ph, rows=4 }: { val: string; set:(v:string)=>void; ph?: string; rows?: number }) {
-  return <textarea rows={rows} value={val} placeholder={ph} onChange={e=>set(e.target.value)}
-    style={{ ...iStyle, resize: 'vertical', lineHeight: 1.6 }}
-    onFocus={e=>(e.target.style.borderColor='rgba(124,58,237,0.6)')}
-    onBlur={e=>(e.target.style.borderColor=T.bd)} />;
+const COLORS = ['#f472b6','#a78bfa','#60a5fa','#34d399','#fbbf24','#fb923c'];
+function pickColor(name: string): string {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) & 0xffffffff;
+  return COLORS[Math.abs(h) % COLORS.length];
 }
 
-function Sel({ val, set, opts }: { val: string; set:(v:string)=>void; opts:{value:string;label:string}[] }) {
-  return <select value={val} onChange={e=>set(e.target.value)} style={{
-    ...iStyle, appearance: 'none', cursor: 'pointer', background: '#0f0f1a',
-    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E")`,
-    backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center',
-  }}>
-    {opts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-  </select>;
-}
-
-function Toggle({ checked, set, label, hint }: { checked:boolean; set:(v:boolean)=>void; label:string; hint?:string }) {
-  return <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
-    <div>
-      <div style={{ fontSize:12, color:T.tx }}>{label}</div>
-      {hint && <div style={{ fontSize:10, color:T.mu, marginTop:2 }}>{hint}</div>}
-    </div>
-    <button onClick={()=>set(!checked)} style={{
-      width:42, height:24, borderRadius:12, border:'none', cursor:'pointer', flexShrink:0,
-      background: checked ? T.ac : 'rgba(255,255,255,0.1)', position:'relative', transition:'background 0.25s',
-    }}>
-      <span style={{ position:'absolute', top:3, left: checked ? 21 : 3, width:18, height:18, borderRadius:'50%', background:'#fff', transition:'left 0.25s', display:'block' }} />
-    </button>
-  </div>;
-}
-
-function Slider({ label, hint, val, set, min, max, step=0.1 }: { label:string; hint?:string; val:number; set:(v:number)=>void; min:number; max:number; step?:number }) {
-  return <div>
-    {label && <label style={{ display:'block', fontSize:10, color:'#9ca3af', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:7 }}>{label}{hint && <span style={{ fontWeight:400, textTransform:'none', color:'#4b5563', marginLeft:8 }}>{hint}</span>}</label>}
-    <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-      <input type="range" min={min} max={max} step={step} value={val} onChange={e=>set(parseFloat(e.target.value))} style={{ flex:1, accentColor:T.ac }} />
-      <code style={{ minWidth:42, textAlign:'center', fontSize:12, background:T.acl, border:'1px solid rgba(124,58,237,0.3)', padding:'2px 8px', borderRadius:5, color:'#c4b5fd' }}>{val}</code>
-    </div>
-  </div>;
-}
-
-function Card({ title, icon, children }: { title:string; icon:string; children:React.ReactNode }) {
-  return <div style={{ background:T.sf, border:`1px solid ${T.bd}`, borderRadius:14, overflow:'hidden', marginBottom:18 }}>
-    <div style={{ padding:'14px 22px', background:'rgba(255,255,255,0.02)', borderBottom:`1px solid ${T.bd}`, display:'flex', alignItems:'center', gap:10 }}>
-      <span style={{ fontSize:18 }}>{icon}</span>
-      <span style={{ fontFamily:T.head, fontWeight:700, fontSize:15, color:'#fff' }}>{title}</span>
-    </div>
-    <div style={{ padding:'18px 22px', display:'flex', flexDirection:'column', gap:14 }}>{children}</div>
-  </div>;
-}
-
-function F({ label, hint, children }: { label:string; hint?:string; children:React.ReactNode }) {
-  return <div>
-    <label style={{ display:'block', fontSize:10, color:'#9ca3af', fontWeight:700, letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:7 }}>
-      {label}{hint && <span style={{ fontWeight:400, textTransform:'none', color:'#4b5563', marginLeft:8 }}>{hint}</span>}
-    </label>
-    {children}
-  </div>;
-}
-
-function Info({ children, color='blue' }: { children:React.ReactNode; color?:string }) {
-  const colors: Record<string, [string,string]> = {
-    blue: ['rgba(96,165,250,0.08)','rgba(96,165,250,0.2)'],
-    yellow: ['rgba(245,158,11,0.08)','rgba(245,158,11,0.2)'],
-    purple: ['rgba(124,58,237,0.08)','rgba(124,58,237,0.25)'],
-    green: ['rgba(52,211,153,0.08)','rgba(52,211,153,0.2)'],
-  };
-  const [bg,bd] = colors[color] || colors.blue;
-  return <div style={{ padding:'10px 14px', borderRadius:8, background:bg, border:`1px solid ${bd}`, fontSize:11, lineHeight:1.7, color:'#9ca3af' }}>{children}</div>;
-}
-
-type Tab = 'vtuber'|'tts'|'ai'|'game'|'twitch'|'obs';
-
-export default function SettingsPage() {
-  const [mounted, setMounted] = useState(false);
-  const [cfg, setCfg] = useState<VtuberConfig>(DEFAULT);
-  const [tab, setTab] = useState<Tab>('vtuber');
-  const [saved, setSaved] = useState(false);
+export default function ChatPage() {
+  const [mounted, setMounted]           = useState(false);
+  const [messages, setMessages]         = useState<ChatMessage[]>([]);
+  const [input, setInput]               = useState('');
+  const [username, setUsername]         = useState('Host');
+  const [config, setConfig]             = useState<Config>({});
+  const [tab, setTab]                   = useState<'chat' | 'override' | 'commands'>('chat');
+  const [overrideText, setOverrideText] = useState('');
+  const [overrideSent, setOverrideSent] = useState(false);
+  const [filter, setFilter]             = useState<'all' | 'ai' | 'user'>('all');
+  const [connected, setConnected]       = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const countRef  = useRef(0);
 
   useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
     if (!mounted) return;
-    try { const r = localStorage.getItem('vtuber-config'); if (r) setCfg(merge(JSON.parse(r))); } catch {}
+    try {
+      const cfg = localStorage.getItem('vtuber-config');
+      if (cfg) setConfig(JSON.parse(cfg));
+    } catch {}
+
+    const poll = setInterval(() => {
+      try {
+        const raw = localStorage.getItem('chat-messages-all');
+        if (raw) {
+          const msgs: ChatMessage[] = JSON.parse(raw);
+          setMessages(msgs);
+          if (msgs.length > countRef.current) {
+            countRef.current = msgs.length;
+            setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+          }
+        }
+        const ts = localStorage.getItem('app-heartbeat');
+        setConnected(!!ts && Date.now() - Number(ts) < 5000);
+      } catch {}
+    }, 500);
+
+    return () => clearInterval(poll);
   }, [mounted]);
 
-  function up<K extends keyof VtuberConfig>(sec: K, vals: Partial<VtuberConfig[K]>) {
-    setCfg(p => ({ ...p, [sec]: { ...(p[sec] as object), ...vals } }));
-  }
-  function upN<K extends keyof VtuberConfig, NK extends keyof VtuberConfig[K]>(sec: K, nested: NK, vals: object) {
-    setCfg(p => ({ ...p, [sec]: { ...(p[sec] as object), [nested]: { ...(p[sec][nested] as object), ...vals } } }));
-  }
-
-  const save = useCallback(() => {
+  const sendMessage = useCallback(() => {
+    if (!input.trim()) return;
+    const msg: ChatMessage = {
+      id: Date.now().toString(),
+      username: username || 'Host',
+      message: input.trim(),
+      timestamp: Date.now(),
+      color: pickColor(username),
+    };
     try {
-      localStorage.setItem('vtuber-config', JSON.stringify(cfg));
-      localStorage.setItem('config-updated', String(Date.now()));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      const q = JSON.parse(localStorage.getItem('chat-send-queue') || '[]');
+      q.push(msg);
+      localStorage.setItem('chat-send-queue', JSON.stringify(q));
     } catch {}
-  }, [cfg]);
+    setMessages(p => [...p, msg]);
+    setInput('');
+  }, [input, username]);
+
+  const sendOverride = useCallback(() => {
+    if (!overrideText.trim()) return;
+    try {
+      localStorage.setItem('obs-override', JSON.stringify({
+        id: Date.now().toString(),
+        text: overrideText.trim(),
+        timestamp: Date.now(),
+      }));
+    } catch {}
+    setOverrideSent(true);
+    setTimeout(() => setOverrideSent(false), 2500);
+    setOverrideText('');
+  }, [overrideText]);
+
+  const filtered = messages.filter(m =>
+    filter === 'ai' ? m.isAI : filter === 'user' ? !m.isAI : true
+  );
 
   if (!mounted) return null;
 
-  const tabs: [Tab, string, string][] = [
-    ['vtuber','🎭','VTuber'],['tts','🎙️','TTS / Voz'],['ai','🤖','IA / LLM'],
-    ['game','♟️','Juego'],['twitch','🟣','Twitch'],['obs','🎥','OBS'],
-  ];
+  const vtuberName = config.vtuber?.name || 'Miko';
+
+  /* ── Shared style tokens ── */
+  const S = {
+    bg: '#080810',
+    surface: 'rgba(255,255,255,0.03)',
+    border: 'rgba(255,255,255,0.07)',
+    accent: '#7c3aed',
+    accentLight: 'rgba(124,58,237,0.18)',
+    text: '#e2e8f0',
+    muted: '#6b7280',
+    font: "'DM Mono', 'Fira Code', monospace",
+    heading: "'Syne', sans-serif",
+  };
+
+  const inputStyle: React.CSSProperties = {
+    padding: '11px 14px', borderRadius: 8,
+    background: S.surface, border: `1px solid ${S.border}`,
+    color: S.text, fontSize: 13, fontFamily: S.font, outline: 'none',
+  };
+
+  const btnPrimary = (active = true): React.CSSProperties => ({
+    padding: '11px 22px', borderRadius: 8, border: 'none',
+    cursor: active ? 'pointer' : 'not-allowed',
+    background: active ? 'linear-gradient(135deg,#7c3aed,#5b21b6)' : S.surface,
+    color: active ? '#fff' : S.muted,
+    fontFamily: S.font, fontSize: 13, fontWeight: 600,
+    transition: 'all 0.2s',
+  });
 
   return (
-    <div style={{ minHeight:'100vh', background:T.bg, color:T.tx, fontFamily:T.font }}>
+    <div style={{ minHeight: '100vh', background: S.bg, color: S.text, fontFamily: S.font }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;}
-        ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:${T.bg};}::-webkit-scrollbar-thumb{background:${T.ac};border-radius:4px;}
-        select option{background:#0f0f1a;}
+        ::-webkit-scrollbar{width:4px;}
+        ::-webkit-scrollbar-track{background:${S.bg};}
+        ::-webkit-scrollbar-thumb{background:${S.accent};border-radius:4px;}
+        @keyframes slideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+        .msg-in{animation:slideUp 0.2s ease-out;}
+        .blink{animation:blink 1.4s ease-in-out infinite;}
+        input:focus,textarea:focus{border-color:rgba(124,58,237,0.6)!important;}
       `}</style>
 
-      <header style={{ padding:'14px 24px', borderBottom:`1px solid ${T.bd}`, display:'flex', alignItems:'center', justifyContent:'space-between', background:'rgba(124,58,237,0.05)', position:'sticky', top:0, zIndex:99 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-          <div style={{ width:34, height:34, borderRadius:9, background:'linear-gradient(135deg,#7c3aed,#06b6d4)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>⚙️</div>
+      {/* ── Header ── */}
+      <header style={{
+        padding: '14px 24px', borderBottom: `1px solid ${S.border}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'rgba(124,58,237,0.05)', position: 'sticky', top: 0, zIndex: 99,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 34, height: 34, borderRadius: 9,
+            background: 'linear-gradient(135deg,#7c3aed,#ec4899)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
+          }}>💬</div>
           <div>
-            <div style={{ fontFamily:T.head, fontWeight:800, fontSize:17, color:'#fff', letterSpacing:'-0.02em' }}>Configuración</div>
-            <div style={{ fontSize:10, color:T.mu, marginTop:1 }}>VTuber AI Stream System</div>
+            <div style={{ fontFamily: S.heading, fontWeight: 800, fontSize: 17, color: '#fff', letterSpacing: '-0.02em' }}>
+              {vtuberName} · Chat
+            </div>
+            <div style={{ fontSize: 10, color: S.muted, marginTop: 1 }}>
+              {config.twitch?.enabled ? `🟣 twitch/${config.twitch.channel}` : '⚫ Local mode'}
+            </div>
           </div>
         </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-          {[['/', '🏠'], ['/chat', '💬'], ['/obs', '🎥']].map(([href, icon]) => (
-            <a key={href} href={href} style={{ width:32, height:32, borderRadius:7, display:'flex', alignItems:'center', justifyContent:'center', textDecoration:'none', fontSize:14, background:T.sf, border:`1px solid ${T.bd}` }}>{icon}</a>
-          ))}
-          <button onClick={save} style={{ padding:'9px 22px', borderRadius:8, border:'none', cursor:'pointer', background: saved ? 'linear-gradient(135deg,#059669,#047857)' : 'linear-gradient(135deg,#7c3aed,#5b21b6)', color:'#fff', fontFamily:T.font, fontSize:12, fontWeight:700, transition:'all 0.25s', minWidth:130 }}>
-            {saved ? '✅ ¡Guardado!' : '💾 Guardar todo'}
-          </button>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <span style={{
+            padding: '4px 12px', borderRadius: 20, fontSize: 11,
+            background: connected ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.08)',
+            border: `1px solid ${connected ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.25)'}`,
+            color: connected ? '#34d399' : '#ef4444',
+            display: 'flex', alignItems: 'center', gap: 5,
+          }}>
+            <span className={connected ? 'blink' : ''} style={{
+              width: 5, height: 5, borderRadius: '50%',
+              background: connected ? '#34d399' : '#ef4444', display: 'inline-block',
+            }}/>
+            {connected ? 'App online' : 'App offline'}
+          </span>
+          <span style={{
+            padding: '4px 12px', borderRadius: 20, fontSize: 11,
+            background: S.accentLight, border: `1px solid rgba(124,58,237,0.3)`, color: '#c4b5fd',
+          }}>
+            {messages.length} msgs
+          </span>
         </div>
       </header>
 
-      <div style={{ display:'flex', height:'calc(100vh - 65px)' }}>
-        <aside style={{ width:190, flexShrink:0, borderRight:`1px solid ${T.bd}`, padding:'18px 10px', display:'flex', flexDirection:'column', gap:3 }}>
-          <p style={{ fontSize:9, color:'#374151', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', padding:'0 8px', marginBottom:6 }}>Secciones</p>
-          {tabs.map(([id, icon, label]) => (
-            <button key={id} onClick={() => setTab(id)} style={{ textAlign:'left', padding:'9px 12px', borderRadius:7, border:'none', cursor:'pointer', fontFamily:T.font, background: tab===id ? T.acl : 'transparent', color: tab===id ? '#c4b5fd' : T.mu, fontSize:12, display:'flex', alignItems:'center', gap:8, transition:'all 0.15s' }}>
+      <div style={{ display: 'flex', height: 'calc(100vh - 65px)' }}>
+
+        {/* ── Sidebar ── */}
+        <aside style={{
+          width: 200, flexShrink: 0,
+          borderRight: `1px solid ${S.border}`,
+          padding: '18px 10px',
+          display: 'flex', flexDirection: 'column', gap: 3,
+        }}>
+          <p style={{ fontSize: 9, color: '#374151', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '0 8px', marginBottom: 6 }}>
+            Panel
+          </p>
+          {([
+            ['chat',     '💬', 'Chat en vivo'],
+            ['override', '📡', 'Override OBS'],
+            ['commands', '🎮', 'Comandos'],
+          ] as const).map(([id, icon, label]) => (
+            <button key={id} onClick={() => setTab(id)} style={{
+              textAlign: 'left', padding: '9px 12px', borderRadius: 7,
+              border: 'none', cursor: 'pointer', fontFamily: S.font,
+              background: tab === id ? S.accentLight : 'transparent',
+              color: tab === id ? '#c4b5fd' : S.muted,
+              fontSize: 12, display: 'flex', alignItems: 'center', gap: 8,
+              transition: 'all 0.15s',
+            }}>
               {icon} {label}
             </button>
           ))}
-          <div style={{ flex:1 }} />
-          <div style={{ borderTop:`1px solid ${T.bd}`, paddingTop:14 }}>
-            <p style={{ fontSize:9, color:'#374151', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', padding:'0 8px', marginBottom:6 }}>Páginas</p>
-            {[['/', '🏠 Main App'], ['/chat', '💬 Chat'], ['/obs', '🎥 OBS']].map(([href, label]) => (
-              <a key={href} href={href} style={{ display:'block', padding:'7px 12px', borderRadius:7, color:T.mu, textDecoration:'none', fontSize:11, transition:'color 0.15s' }}
-                onMouseEnter={e=>(e.currentTarget.style.color='#c4b5fd')} onMouseLeave={e=>(e.currentTarget.style.color=T.mu)}>{label}</a>
+
+          <div style={{ flex: 1 }} />
+
+          <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 14 }}>
+            <p style={{ fontSize: 9, color: '#374151', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', padding: '0 8px', marginBottom: 6 }}>
+              Páginas
+            </p>
+            {[
+              ['/', '🏠 Main App'],
+              ['/obs', '🎥 OBS Overlay'],
+              ['/settings', '⚙️ Settings'],
+            ].map(([href, label]) => (
+              <a key={href} href={href} style={{
+                display: 'block', padding: '7px 12px', borderRadius: 7,
+                color: S.muted, textDecoration: 'none', fontSize: 11,
+                transition: 'color 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#c4b5fd')}
+              onMouseLeave={e => (e.currentTarget.style.color = S.muted)}>
+                {label}
+              </a>
             ))}
           </div>
         </aside>
 
-        <main style={{ flex:1, overflowY:'auto', padding:'28px 32px' }}>
+        {/* ── Content ── */}
+        <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-          {/* VTuber */}
-          {tab==='vtuber' && <>
-            <h2 style={{ fontFamily:T.head, fontWeight:800, fontSize:22, margin:'0 0 22px', color:'#fff' }}>🎭 Personalidad</h2>
-            <Card title="Identidad" icon="✨">
-              <F label="Nombre"><TI val={cfg.vtuber.name} set={v=>up('vtuber',{name:v})} ph="Miko" /></F>
-              <F label="Idioma">
-                <Sel val={cfg.vtuber.language} set={v=>up('vtuber',{language:v})} opts={[
-                  {value:'es',label:'🇪🇸 Español'},{value:'en',label:'🇺🇸 English'},
-                  {value:'ja',label:'🇯🇵 日本語'},{value:'pt',label:'🇧🇷 Português'},
-                ]} />
-              </F>
-              <Toggle checked={cfg.vtuber.voiceEnabled} set={v=>up('vtuber',{voiceEnabled:v})} label="Voz habilitada" hint="Usa TTS para leer respuestas" />
-            </Card>
-            <Card title="Prompt del sistema" icon="📝">
-              <F label="Instrucciones de personalidad" hint="Se envía en cada mensaje">
-                <TA val={cfg.vtuber.prompt} set={v=>up('vtuber',{prompt:v})} rows={8} ph="Eres una VTuber amigable llamada..." />
-              </F>
-              <Info color="yellow">💡 <strong>Tip:</strong> Mantén el prompt corto para ahorrar tokens. Menciona el juego actual, el idioma y los rasgos de personalidad clave. Máximo 200 palabras recomendado.</Info>
-            </Card>
-          </>}
-
-          {/* TTS */}
-          {tab==='tts' && <>
-            <h2 style={{ fontFamily:T.head, fontWeight:800, fontSize:22, margin:'0 0 22px', color:'#fff' }}>🎙️ Text-to-Speech</h2>
-            <Card title="Proveedor" icon="🔊">
-              <F label="Motor de voz">
-                <Sel val={cfg.tts.provider} set={v=>up('tts',{provider:v as any})} opts={[
-                  {value:'browser',label:'🌐 Web Speech API (gratis)'},
-                  {value:'elevenlabs',label:'⚡ ElevenLabs (realista)'},
-                  {value:'voicevox',label:'🎌 VoiceVox (japonés, local)'},
-                  {value:'none',label:'🔇 Sin voz'},
-                ]} />
-              </F>
-            </Card>
-
-            {cfg.tts.provider==='browser' && <Card title="Web Speech API" icon="🌐">
-              <F label="Voz del navegador" hint="Deja en blanco para default">
-                <TI val={cfg.tts.browserVoice} set={v=>up('tts',{browserVoice:v})} ph="Microsoft Sabina Online (Spanish Mexico)" />
-              </F>
-              <Slider label="Velocidad" val={cfg.tts.browserRate} set={v=>up('tts',{browserRate:v})} min={0.5} max={2} step={0.05} hint="0.5=lento, 2=rápido" />
-              <Slider label="Tono (pitch)" val={cfg.tts.browserPitch} set={v=>up('tts',{browserPitch:v})} min={0.5} max={2} step={0.05} hint="1=normal, mayor=más agudo" />
-              <Info color="blue">Para ver voces disponibles, abre la consola del navegador: <br /><code style={{color:'#c4b5fd'}}>speechSynthesis.getVoices().map(v =&gt; v.name)</code></Info>
-            </Card>}
-
-            {cfg.tts.provider==='elevenlabs' && <Card title="ElevenLabs" icon="⚡">
-              <F label="API Key" hint="elevenlabs.io → Profile → API Keys">
-                <TI val={cfg.tts.elevenlabs.apiKey} set={v=>upN('tts','elevenlabs',{apiKey:v})} type="password" ph="sk_..." />
-              </F>
-              <F label="Voice ID">
-                <TI val={cfg.tts.elevenlabs.voiceId} set={v=>upN('tts','elevenlabs',{voiceId:v})} ph="EXAVITQu4vr4xnSDxMaL" />
-              </F>
-              <Info color="purple">Voces recomendadas: <strong>Bella</strong>, <strong>Rachel</strong>, <strong>Domi</strong>. El Voice ID está en el URL del voice editor.</Info>
-            </Card>}
-
-            {cfg.tts.provider==='voicevox' && <Card title="VoiceVox" icon="🎌">
-              <F label="Endpoint" hint="VoiceVox debe estar corriendo localmente">
-                <TI val={cfg.tts.voicevox.endpoint} set={v=>upN('tts','voicevox',{endpoint:v})} ph="http://localhost:50021" />
-              </F>
-              <F label="Speaker ID">
-                <Sel val={String(cfg.tts.voicevox.speaker)} set={v=>upN('tts','voicevox',{speaker:parseInt(v)})} opts={[
-                  {value:'1',label:'1 - Zundamon'},{value:'3',label:'3 - Metan'},{value:'8',label:'8 - Sayo'},
-                  {value:'13',label:'13 - Mei'},{value:'2',label:'2 - Shikoku Metan'},
-                ]} />
-              </F>
-            </Card>}
-          </>}
-
-          {/* AI */}
-          {tab==='ai' && <>
-            <h2 style={{ fontFamily:T.head, fontWeight:800, fontSize:22, margin:'0 0 22px', color:'#fff' }}>🤖 Inteligencia Artificial</h2>
-            <Card title="Proveedor" icon="🧠">
-              <F label="Motor de IA">
-                <Sel val={cfg.ai.provider} set={v=>up('ai',{provider:v as any})} opts={[
-                  {value:'openai',label:'💚 OpenAI (GPT-4o...)'},
-                  {value:'anthropic',label:'🟠 Anthropic (Claude...)'},
-                  {value:'openrouter',label:'🌐 OpenRouter (multi-modelo)'},
-                  {value:'ollama',label:'🦙 Ollama (local)'},
-                ]} />
-              </F>
-            </Card>
-
-            {cfg.ai.provider==='openai' && <Card title="OpenAI" icon="💚">
-              <F label="API Key"><TI val={cfg.ai.apiKey} set={v=>up('ai',{apiKey:v})} type="password" ph="sk-..." /></F>
-              <F label="Modelo">
-                <Sel val={cfg.ai.model} set={v=>up('ai',{model:v})} opts={[
-                  {value:'gpt-4o-mini',label:'gpt-4o-mini (rápido, barato ⭐)'},
-                  {value:'gpt-4o',label:'gpt-4o (mejor calidad)'},
-                  {value:'gpt-3.5-turbo',label:'gpt-3.5-turbo (más barato)'},
-                ]} />
-              </F>
-            </Card>}
-
-            {cfg.ai.provider==='anthropic' && <Card title="Anthropic / Claude" icon="🟠">
-              <F label="API Key"><TI val={cfg.ai.apiKey} set={v=>up('ai',{apiKey:v})} type="password" ph="sk-ant-..." /></F>
-              <F label="Modelo">
-                <Sel val={cfg.ai.model} set={v=>up('ai',{model:v})} opts={[
-                  {value:'claude-3-5-haiku-20241022',label:'claude-3-5-haiku (rápido ⭐)'},
-                  {value:'claude-3-5-sonnet-20241022',label:'claude-3-5-sonnet (balanceado)'},
-                  {value:'claude-opus-4-6',label:'claude-opus-4.6 (mejor)'},
-                ]} />
-              </F>
-            </Card>}
-
-            {cfg.ai.provider==='openrouter' && <Card title="OpenRouter" icon="🌐">
-              <F label="API Key"><TI val={cfg.ai.apiKey} set={v=>up('ai',{apiKey:v})} type="password" ph="sk-or-v1-..." /></F>
-              <F label="Modelo"><TI val={cfg.ai.openrouterModel} set={v=>up('ai',{openrouterModel:v})} ph="openai/gpt-4o-mini" /></F>
-              <Info color="blue">Formatos válidos: <code style={{color:'#c4b5fd'}}>openai/gpt-4o-mini</code>, <code style={{color:'#c4b5fd'}}>anthropic/claude-3.5-haiku</code>, <code style={{color:'#c4b5fd'}}>meta-llama/llama-3.1-8b</code></Info>
-            </Card>}
-
-            {cfg.ai.provider==='ollama' && <Card title="Ollama (local)" icon="🦙">
-              <F label="Endpoint"><TI val={cfg.ai.ollamaEndpoint} set={v=>up('ai',{ollamaEndpoint:v})} ph="http://localhost:11434" /></F>
-              <F label="Modelo"><TI val={cfg.ai.ollamaModel} set={v=>up('ai',{ollamaModel:v})} ph="llama3" /></F>
-              <Info color="green">Modelos recomendados: <code style={{color:'#c4b5fd'}}>llama3</code>, <code style={{color:'#c4b5fd'}}>mistral</code>, <code style={{color:'#c4b5fd'}}>gemma2</code></Info>
-            </Card>}
-
-            <Card title="Parámetros de generación" icon="⚙️">
-              <Slider label="Temperatura" val={cfg.ai.temperature} set={v=>up('ai',{temperature:v})} min={0} max={1.5} step={0.05} hint="0=determinístico, 1.5=muy creativo" />
-              <Slider label="Max tokens" val={cfg.ai.maxTokens} set={v=>up('ai',{maxTokens:v})} min={50} max={500} step={10} hint="más=respuestas más largas" />
-            </Card>
-          </>}
-
-          {/* Game */}
-          {tab==='game' && <>
-            <h2 style={{ fontFamily:T.head, fontWeight:800, fontSize:22, margin:'0 0 22px', color:'#fff' }}>♟️ Juego interactivo</h2>
-            <Card title="Juego seleccionado" icon="🎮">
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                {[['chess','♟️','Ajedrez','!move E2 E4'],['checkers','⚫','Damas','!move C3 D4'],['reversi','⚪','Reversi','!place D3'],['none','🚫','Sin juego','Solo chat']] .map(([v,icon,label,cmd])=>(
-                  <button key={v} onClick={()=>up('game',{current:v as any})} style={{ padding:'14px 16px', borderRadius:10, border:`1px solid ${cfg.game.current===v ? 'rgba(124,58,237,0.5)' : T.bd}`, cursor:'pointer', background: cfg.game.current===v ? T.acl : T.sf2, color: cfg.game.current===v ? '#c4b5fd' : T.mu, textAlign:'left', fontFamily:T.font, transition:'all 0.2s' }}>
-                    <div style={{ fontSize:20, marginBottom:4 }}>{icon}</div>
-                    <div style={{ fontSize:12, fontWeight:600, color: cfg.game.current===v ? T.tx : T.mu }}>{label}</div>
-                    <div style={{ fontSize:10, marginTop:2 }}><code style={{ color:'#7c3aed', background:'rgba(124,58,237,0.1)', padding:'1px 5px', borderRadius:3 }}>{cmd}</code></div>
+          {/* TAB: Chat */}
+          {tab === 'chat' && (
+            <>
+              {/* Filter */}
+              <div style={{ padding: '10px 18px', borderBottom: `1px solid ${S.border}`, display: 'flex', gap: 7, alignItems: 'center' }}>
+                {(['all','ai','user'] as const).map(f => (
+                  <button key={f} onClick={() => setFilter(f)} style={{
+                    padding: '4px 12px', borderRadius: 20,
+                    border: `1px solid ${filter===f ? 'rgba(124,58,237,0.5)' : S.border}`,
+                    background: filter===f ? S.accentLight : 'transparent',
+                    color: filter===f ? '#c4b5fd' : S.muted,
+                    fontSize: 11, cursor: 'pointer', fontFamily: S.font,
+                  }}>
+                    {f === 'all' ? '🔵 Todos' : f === 'ai' ? '🤖 IA' : '👤 Users'}
                   </button>
                 ))}
+                <div style={{ flex: 1 }} />
+                <button onClick={() => { setMessages([]); try { localStorage.removeItem('chat-messages-all'); } catch {} }} style={{
+                  padding: '4px 12px', borderRadius: 20,
+                  border: '1px solid rgba(239,68,68,0.25)', background: 'transparent',
+                  color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: S.font,
+                }}>
+                  🗑️ Limpiar
+                </button>
               </div>
-              {cfg.game.current!=='none' && <F label="Dificultad">
-                <Sel val={cfg.game.difficulty} set={v=>up('game',{difficulty:v as any})} opts={[
-                  {value:'easy',label:'🟢 Fácil'},{value:'medium',label:'🟡 Medio'},{value:'hard',label:'🔴 Difícil'},
-                ]} />
-              </F>}
-            </Card>
-            {cfg.game.current!=='none' && <Card title="Comentarios de la VTuber" icon="💬">
-              <Toggle checked={cfg.game.commentOnMoves} set={v=>up('game',{commentOnMoves:v})} label="Comentar movimientos" hint="La VTuber hablará sobre las jugadas" />
-              {cfg.game.commentOnMoves && <Slider label="Comentar cada N movimientos" val={cfg.game.commentFrequency} set={v=>up('game',{commentFrequency:v})} min={1} max={10} step={1} />}
-            </Card>}
-          </>}
 
-          {/* Twitch */}
-          {tab==='twitch' && <>
-            <h2 style={{ fontFamily:T.head, fontWeight:800, fontSize:22, margin:'0 0 22px', color:'#fff' }}>🟣 Twitch</h2>
-            <Card title="Conexión" icon="🔌">
-              <Toggle checked={cfg.twitch.enabled} set={v=>up('twitch',{enabled:v})} label="Habilitar Twitch" hint="Lee el chat de tu canal en tiempo real" />
-              {cfg.twitch.enabled && <>
-                <F label="Nombre del canal" hint="Sin @"><TI val={cfg.twitch.channel} set={v=>up('twitch',{channel:v})} ph="mikovtuber" /></F>
-                <F label="OAuth Token" hint="twitchapps.com/tmi"><TI val={cfg.twitch.oauth} set={v=>up('twitch',{oauth:v})} type="password" ph="oauth:xxxxxxxxxx" /></F>
-                <F label="Bot name / tu usuario"><TI val={cfg.twitch.botName} set={v=>up('twitch',{botName:v})} ph="mikovtuber" /></F>
-                <Info color="yellow">
-                  🔐 <strong>Pasos para OAuth:</strong><br />
-                  1. Ve a <a href="https://twitchapps.com/tmi/" target="_blank" style={{color:'#c4b5fd'}}>twitchapps.com/tmi</a> → Connect<br />
-                  2. Copia el token (empieza con <code>oauth:</code>)<br />
-                  3. Pégalo arriba — se guarda solo en este dispositivo
-                </Info>
-              </>}
-            </Card>
-            {cfg.twitch.enabled && <Card title="Comportamiento" icon="⚡">
-              <Toggle checked={cfg.twitch.respondToAll} set={v=>up('twitch',{respondToAll:v})} label="Responder a todos los mensajes" hint="Si está off, solo menciones" />
-              <Toggle checked={cfg.twitch.respondToMentions} set={v=>up('twitch',{respondToMentions:v})} label="Siempre responder a mentions" hint={`@${cfg.vtuber.name} siempre recibe respuesta`} />
-              <Slider label="Cooldown entre respuestas" val={cfg.twitch.cooldownSeconds} set={v=>up('twitch',{cooldownSeconds:v})} min={1} max={30} step={1} hint="segundos" />
-              <F label="Usuarios ignorados" hint="separados por coma"><TI val={cfg.twitch.ignoredUsers} set={v=>up('twitch',{ignoredUsers:v})} ph="nightbot,streamelements" /></F>
-            </Card>}
-          </>}
-
-          {/* OBS */}
-          {tab==='obs' && <>
-            <h2 style={{ fontFamily:T.head, fontWeight:800, fontSize:22, margin:'0 0 22px', color:'#fff' }}>🎥 OBS Overlay</h2>
-            <Card title="URL de tu app" icon="🔗">
-              <F label="URL desplegada" hint="Vercel / Netlify"><TI val={cfg.obs.overlayUrl} set={v=>up('obs',{overlayUrl:v})} ph="https://tu-app.vercel.app" /></F>
-              {cfg.obs.overlayUrl && <div style={{ display:'flex', flexDirection:'column', gap:8, padding:'12px 14px', borderRadius:8, background:T.acl, border:'1px solid rgba(124,58,237,0.25)' }}>
-                {[['/obs','🎭 Modelo VRM'],['/chat','💬 Chat panel']].map(([path,label])=>{
-                  const url = cfg.obs.overlayUrl + path;
-                  return <div key={path} style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:11, color:T.mu, flexShrink:0 }}>{label}:</span>
-                    <code style={{ flex:1, background:T.sf2, border:`1px solid ${T.bd}`, padding:'4px 9px', borderRadius:5, fontSize:11, color:'#c4b5fd', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{url}</code>
-                    <button onClick={()=>navigator.clipboard.writeText(url)} style={{ padding:'4px 9px', borderRadius:5, border:`1px solid ${T.bd}`, background:T.sf, cursor:'pointer', fontSize:10, color:T.mu, fontFamily:T.font, flexShrink:0 }}>Copiar</button>
-                  </div>;
-                })}
-              </div>}
-            </Card>
-            <Card title="Overlay" icon="🖥️">
-              <Toggle checked={cfg.obs.showChat} set={v=>up('obs',{showChat:v})} label="Mostrar mensajes de chat" />
-              {cfg.obs.showChat && <Slider label="Mensajes visibles" val={cfg.obs.chatLimit} set={v=>up('obs',{chatLimit:v})} min={1} max={10} step={1} />}
-              <Toggle checked={cfg.obs.transparentBg} set={v=>up('obs',{transparentBg:v})} label="Fondo transparente" hint="Desactiva para debug con fondo negro" />
-            </Card>
-            <Card title="Instrucciones OBS" icon="📋">
-              <div style={{ display:'flex', flexDirection:'column', gap:8, fontSize:11, color:'#9ca3af', lineHeight:1.7 }}>
-                {[
-                  ['1','Fuentes → + → Fuente de Navegador'],
-                  ['2',`URL: ${cfg.obs.overlayUrl || 'https://tu-app.vercel.app'}/obs`],
-                  ['3','Ancho: 1920 · Alto: 1080'],
-                  ['4','CSS: body { background: transparent !important; margin: 0; }'],
-                  ['5','Activar "Apagar fuente cuando no sea visible"'],
-                  ['6','Usar "Interactuar" para arrastrar y hacer zoom al modelo'],
-                ].map(([n,text])=>(
-                  <div key={n} style={{ display:'flex', gap:10 }}>
-                    <span style={{ width:20, height:20, borderRadius:'50%', background:T.acl, border:'1px solid rgba(124,58,237,0.4)', color:'#c4b5fd', display:'inline-flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700, flexShrink:0 }}>{n}</span>
-                    <span style={{ paddingTop:2, color: n==='2' ? '#c4b5fd' : '#9ca3af' }}>{text}</span>
+              {/* Messages */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {filtered.length === 0 && (
+                  <div style={{ textAlign: 'center', color: S.muted, marginTop: 60 }}>
+                    <div style={{ fontSize: 36, marginBottom: 10 }}>💭</div>
+                    <div style={{ fontSize: 13 }}>Sin mensajes aún</div>
+                    <div style={{ fontSize: 11, marginTop: 4, color: '#374151' }}>Los mensajes aparecerán aquí en tiempo real</div>
+                  </div>
+                )}
+                {filtered.map(m => (
+                  <div key={m.id} className="msg-in" style={{
+                    display: 'flex', gap: 10, padding: '9px 13px', borderRadius: 9,
+                    background: m.isAI ? 'rgba(124,58,237,0.07)' : S.surface,
+                    border: `1px solid ${m.isAI ? 'rgba(124,58,237,0.15)' : S.border}`,
+                  }}>
+                    <div style={{
+                      width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                      background: m.isAI ? 'linear-gradient(135deg,#7c3aed,#ec4899)' : `${m.color || pickColor(m.username)}22`,
+                      border: `1px solid ${m.isAI ? 'rgba(124,58,237,0.4)' : (m.color || pickColor(m.username))+'44'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+                    }}>
+                      {m.isAI ? '🤖' : m.username[0]?.toUpperCase()}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 2 }}>
+                        <span style={{ fontWeight: 600, fontSize: 12, color: m.color || (m.isAI ? '#c4b5fd' : S.text) }}>{m.username}</span>
+                        {m.isAI && <span style={{ fontSize: 9, color: S.accent, background: S.accentLight, padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>AI</span>}
+                        <span style={{ fontSize: 10, color: '#374151', marginLeft: 'auto' }}>{timeAgo(m.timestamp)}</span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: 12, color: '#d1d5db', lineHeight: 1.5, wordBreak: 'break-word' }}>{m.message}</p>
+                    </div>
                   </div>
                 ))}
+                <div ref={bottomRef} />
               </div>
-            </Card>
-          </>}
 
-          <div style={{ marginTop:8, display:'flex', justifyContent:'flex-end' }}>
-            <button onClick={save} style={{ padding:'12px 32px', borderRadius:10, border:'none', cursor:'pointer', background: saved ? 'linear-gradient(135deg,#059669,#047857)' : 'linear-gradient(135deg,#7c3aed,#5b21b6)', color:'#fff', fontFamily:T.font, fontSize:13, fontWeight:700, transition:'all 0.25s', minWidth:160 }}>
-              {saved ? '✅ ¡Guardado!' : '💾 Guardar configuración'}
-            </button>
-          </div>
+              {/* Input */}
+              <div style={{ padding: '14px 18px', borderTop: `1px solid ${S.border}`, background: 'rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 10, color: S.muted }}>Usuario:</span>
+                  <input value={username} onChange={e => setUsername(e.target.value)}
+                    style={{ ...inputStyle, width: 130, fontSize: 11 }} />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={input} onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && sendMessage()}
+                    placeholder="Escribe un mensaje para la VTuber..."
+                    style={{ ...inputStyle, flex: 1 }} />
+                  <button onClick={sendMessage} disabled={!input.trim()} style={btnPrimary(!!input.trim())}>
+                    Enviar ↵
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* TAB: Override */}
+          {tab === 'override' && (
+            <div style={{ flex: 1, padding: '28px 32px', overflowY: 'auto' }}>
+              <h2 style={{ fontFamily: S.heading, fontWeight: 800, fontSize: 22, margin: '0 0 6px', color: '#fff' }}>
+                📡 Override OBS Overlay
+              </h2>
+              <p style={{ color: S.muted, fontSize: 12, margin: '0 0 28px', lineHeight: 1.7 }}>
+                Muestra un mensaje personalizado en el overlay de OBS durante 30 segundos.
+                Ideal para anuncios, alertas o cualquier aviso al stream sin pasar por la IA.
+              </p>
+
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 12, padding: 22, marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 10, color: '#9ca3af', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>
+                  Mensaje del overlay
+                </label>
+                <textarea value={overrideText} onChange={e => setOverrideText(e.target.value)}
+                  placeholder="Ej: ¡Sígueme en Twitter! 🎀  /  ¡Suscríbete! ❤️"
+                  rows={4} style={{
+                    ...inputStyle, width: '100%', resize: 'none', lineHeight: 1.6, fontSize: 13,
+                  }} />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                  <button onClick={sendOverride} disabled={!overrideText.trim()} style={{
+                    ...btnPrimary(!!overrideText.trim()),
+                    background: overrideSent
+                      ? 'linear-gradient(135deg,#059669,#047857)'
+                      : !!overrideText.trim() ? 'linear-gradient(135deg,#7c3aed,#5b21b6)' : S.surface,
+                    padding: '11px 28px',
+                  }}>
+                    {overrideSent ? '✅ ¡Enviado!' : '📡 Mostrar en OBS'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div style={{ background: S.surface, border: `1px solid ${S.border}`, borderRadius: 12, padding: 22 }}>
+                <p style={{ fontSize: 10, color: '#374151', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 14 }}>
+                  Preview
+                </p>
+                <div style={{
+                  background: '#0d1117', borderRadius: 9, padding: 20,
+                  border: '2px dashed rgba(255,255,255,0.06)', minHeight: 100,
+                  display: 'flex', alignItems: 'flex-end',
+                }}>
+                  {overrideText ? (
+                    <div style={{
+                      background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)',
+                      borderRadius: 10, padding: '10px 16px',
+                      border: '1px solid rgba(124,58,237,0.3)',
+                    }}>
+                      <div style={{ fontSize: 10, color: S.accent, fontWeight: 700, marginBottom: 3 }}>📡 Overlay</div>
+                      <p style={{ margin: 0, color: '#fff', fontSize: 12 }}>{overrideText}</p>
+                    </div>
+                  ) : (
+                    <p style={{ color: '#374151', fontSize: 11, margin: 'auto' }}>El texto aparecerá aquí</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: Commands */}
+          {tab === 'commands' && (
+            <div style={{ flex: 1, padding: '28px 32px', overflowY: 'auto' }}>
+              <h2 style={{ fontFamily: S.heading, fontWeight: 800, fontSize: 22, margin: '0 0 6px', color: '#fff' }}>
+                🎮 Comandos del chat
+              </h2>
+              <p style={{ color: S.muted, fontSize: 12, margin: '0 0 24px' }}>
+                Comandos que tus viewers pueden usar en Twitch.
+              </p>
+
+              {[
+                { title: '♟️ Ajedrez / Damas', color: '#f59e0b', items: [
+                  ['!move E2 to E4', 'Mover pieza de E2 a E4'],
+                  ['!move A3 to B4', 'Columnas A-H, filas 1-8'],
+                  ['!move C3 to E5', 'Salto en damas (captura)'],
+                ]},
+                { title: '⚪ Reversi / Othello', color: '#e2e8f0', items: [
+                  ['!place D3', 'Colocar pieza en D3'],
+                  ['!place A1', 'Cualquier casilla válida'],
+                ]},
+                { title: '💬 Interacción con la IA', color: '#a78bfa', items: [
+                  ['Cualquier texto', 'La IA responde automáticamente'],
+                  ['Texto con @ o !', 'Ignorado (excepto comandos de juego)'],
+                ]},
+              ].map(section => (
+                <div key={section.title} style={{
+                  marginBottom: 16, background: S.surface,
+                  border: `1px solid ${S.border}`, borderRadius: 10, overflow: 'hidden',
+                }}>
+                  <div style={{ padding: '11px 18px', background: 'rgba(255,255,255,0.02)', borderBottom: `1px solid ${S.border}`, fontWeight: 700, fontSize: 13, color: section.color }}>
+                    {section.title}
+                  </div>
+                  {section.items.map(([cmd, desc], i) => (
+                    <div key={i} style={{
+                      padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 14,
+                      borderBottom: i < section.items.length-1 ? `1px solid ${S.border}` : 'none',
+                    }}>
+                      <code style={{
+                        background: S.accentLight, border: '1px solid rgba(124,58,237,0.25)',
+                        padding: '3px 9px', borderRadius: 5, fontSize: 11, color: '#c4b5fd', flexShrink: 0,
+                      }}>{cmd}</code>
+                      <span style={{ fontSize: 11, color: S.muted }}>{desc}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </main>
       </div>
     </div>
