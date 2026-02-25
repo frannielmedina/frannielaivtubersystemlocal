@@ -9,6 +9,7 @@ import { ChessBoard } from '@/components/games/ChessBoard';
 import { CheckersBoard } from '@/components/games/CheckersBoard';
 import { ReversiBoard } from '@/components/games/ReversiBoard';
 import { ChatPanel } from '@/components/ChatPanel';
+import { OBSLinkButton } from '@/components/OBSLinkButton';
 import { useStore } from '@/store/useStore';
 import { AIService, GameContext } from '@/services/AIService';
 import { TTSService } from '@/services/TTSService';
@@ -56,6 +57,14 @@ export default function Home() {
     localStorage.setItem('vtuber-bg', selectedBg);
   }, [selectedBg]);
 
+  // ── Sync chat messages to localStorage for /obs page ────
+  useEffect(() => {
+    try {
+      const last5 = chatMessages.slice(-5);
+      localStorage.setItem('obs-messages', JSON.stringify(last5));
+    } catch {}
+  }, [chatMessages]);
+
   // ── Game context sync ───────────────────────────────────
   useEffect(() => {
     setCurrentGameContext({
@@ -74,7 +83,7 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [chatMessages]);
 
-  // ── Auto-hide controls (FIXED: no rapid flicker) ────────
+  // ── Auto-hide controls ───────────────────────────────────
   useEffect(() => {
     const show = () => {
       if (isIdleRef.current) {
@@ -85,7 +94,7 @@ export default function Home() {
       idleTimerRef.current = setTimeout(() => {
         isIdleRef.current = true;
         setControlsVisible(false);
-      }, 5000); // hide after 5s of no movement
+      }, 5000);
     };
 
     window.addEventListener('mousemove', show);
@@ -140,7 +149,6 @@ export default function Home() {
       addChatMessage({ id: (Date.now() + 1).toString(), username: config.vtuber.name || 'VTuber', message: response, timestamp: Date.now(), isAI: true, color: '#9333ea' });
       if (config.tts.enabled) await ttsService.speak(response);
 
-      // Detect animation trigger from response
       const trigger = detectAnimationTrigger(response);
       if (trigger) {
         setAnimation({ type: 'emote', name: trigger, duration: 4000 });
@@ -151,7 +159,6 @@ export default function Home() {
     }
   };
 
-  // Detect animation from AI response text
   function detectAnimationTrigger(text: string): string | null {
     const t = text.toUpperCase();
     if (t.includes('[DANCE]'))     return 'dance';
@@ -175,7 +182,6 @@ export default function Home() {
     return null;
   }
 
-  // Expose game context updater globally
   const updateGameContext = (context: Partial<GameContext>) => {
     setCurrentGameContext((prev) => ({ ...prev, ...context }));
   };
@@ -199,14 +205,13 @@ export default function Home() {
     }
   };
 
-  // Grid layout: if no game, 2 cols (vtuber + chat); if game, 3 cols
   const gridCols = hasGame
     ? (chatOpen ? 'grid-cols-12' : 'grid-cols-9')
     : (chatOpen ? 'grid-cols-8'  : 'grid-cols-5');
 
-  const vtuberCols  = hasGame ? 'col-span-5' : 'col-span-5';
-  const gameCols    = 'col-span-4';
-  const chatCols    = 'col-span-3';
+  const vtuberCols = 'col-span-5';
+  const gameCols   = 'col-span-4';
+  const chatCols   = 'col-span-3';
 
   return (
     <main className="h-screen w-screen overflow-hidden bg-black relative">
@@ -216,7 +221,7 @@ export default function Home() {
         <div className={`${vtuberCols} relative h-screen`}>
           <VTuberScene bgId={selectedBg} />
 
-          {/* Controls overlay — fade in/out smoothly */}
+          {/* Controls overlay */}
           <div
             className="absolute top-4 right-4 flex gap-2 transition-opacity duration-700 pointer-events-auto"
             style={{ opacity: controlsVisible ? 1 : 0, pointerEvents: controlsVisible ? 'auto' : 'none' }}
@@ -252,13 +257,16 @@ export default function Home() {
               )}
             </div>
 
+            {/* OBS Link Button */}
+            <OBSLinkButton chatMessages={chatMessages} />
+
             <button onClick={() => setConfig({ appMode: 'collab' })}  className="p-3 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors" title="Collab Mode"><Mic size={22} color="white" /></button>
             <button onClick={() => setConfig({ appMode: 'gaming' })}  className="p-3 bg-green-600 hover:bg-green-700 rounded-full transition-colors" title="Gaming Mode"><Video size={22} color="white" /></button>
             <button onClick={() => setChatOpen((o) => !o)}            className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors">{chatOpen ? <X size={22} color="white" /> : <MessageCircle size={22} color="white" />}</button>
             <button onClick={() => setSettingsOpen(true)}             className="p-3 bg-purple-600 hover:bg-purple-700 rounded-full transition-colors"><Settings size={22} color="white" /></button>
           </div>
 
-          {/* VTuber name — minimal, no status */}
+          {/* VTuber name */}
           <div
             className="absolute bottom-4 left-4 bg-black bg-opacity-60 rounded-lg px-4 py-2 transition-opacity duration-700"
             style={{ opacity: controlsVisible ? 1 : 0 }}
@@ -272,7 +280,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ── Game Board (only when a game is selected) ─────── */}
+        {/* ── Game Board ────────────────────────────────────── */}
         {hasGame && (
           <div className={`${gameCols} bg-gray-900 p-4 h-screen overflow-y-auto`}>
             {renderGame()}
